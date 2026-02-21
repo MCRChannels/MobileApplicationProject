@@ -1,0 +1,280 @@
+import React, { useState, useContext } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  StatusBar,
+  Alert,
+  Platform,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons, Feather } from "@expo/vector-icons";
+import { ExamContext } from "../context/examContext";
+import DateTimePicker from "@react-native-community/datetimepicker";
+
+const CreateExamScreen = ({ navigation }) => {
+  const { dispatch } = useContext(ExamContext);
+
+  const [form, setForm] = useState({
+    title: "",
+    date: new Date().toLocaleDateString('th-TH'),
+    rawDate: new Date(),
+    startTime: "09:00",
+    endTime: "12:00",
+    roomNumber: "",
+  });
+
+  const [showPicker, setShowPicker] = useState({ field: null, visible: false });
+
+  const onDateTimeChange = (event, selectedValue) => {
+    setShowPicker({ ...showPicker, visible: false });
+
+    if (selectedValue) {
+      if (showPicker.field === 'date') {
+        setForm({
+          ...form,
+          rawDate: selectedValue,
+          date: selectedValue.toLocaleDateString('th-TH')
+        });
+      } else {
+        const hours = selectedValue.getHours().toString().padStart(2, '0');
+        const minutes = selectedValue.getMinutes().toString().padStart(2, '0');
+        const timeString = `${hours}:${minutes}`;
+
+        if (showPicker.field === 'start') {
+          setForm({ ...form, startTime: timeString });
+        } else {
+          setForm({ ...form, endTime: timeString });
+        }
+      }
+    }
+  };
+
+  const handleCreate = () => {
+    if (!form.title || !form.date) {
+      Alert.alert("แจ้งเตือน", "กรุณากรอกชื่อวิชาและเลือกวันที่สอบ");
+      return;
+    }
+
+    if (form.endTime <= form.startTime) {
+      Alert.alert('แจ้งเตือน', 'เวลาจบการสอบต้องมากกว่าเวลาเริ่มนะครับ');
+      return;
+    }
+
+    dispatch({ type: "ADD_OR_UPDATE", payload: form });
+    navigation.goBack();
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={22} color="#1a3a3a" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Create Exam</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <View style={styles.formContainer}>
+        {/* Subject Name */}
+        <Text style={styles.label}>Subject Name</Text>
+        <View style={styles.inputWrapper}>
+          <Ionicons name="book-outline" size={18} color="#006664" style={styles.inputIcon} />
+          <TextInput
+            style={styles.fullInput}
+            placeholder="e.g. Data Structure"
+            placeholderTextColor="#A0AEC0"
+            value={form.title}
+            onChangeText={(text) => setForm({ ...form, title: text })}
+          />
+        </View>
+
+        {/* Exam Date */}
+        <Text style={styles.label}>Exam Date</Text>
+        <TouchableOpacity
+          style={styles.inputWrapper}
+          onPress={() => setShowPicker({ field: 'date', visible: true })}
+        >
+          <Ionicons name="calendar-outline" size={18} color="#006664" style={styles.inputIcon} />
+          <Text style={styles.valueText}>{form.date}</Text>
+        </TouchableOpacity>
+
+        {/* Time Row */}
+        <View style={styles.row}>
+          <View style={{ width: "48%" }}>
+            <Text style={styles.label}>Start Time</Text>
+            <TouchableOpacity
+              style={[styles.inputWrapper, styles.halfInputWrapper]}
+              onPress={() => setShowPicker({ field: 'start', visible: true })}
+            >
+              <Ionicons name="time-outline" size={18} color="#006664" style={styles.inputIcon} />
+              <Text style={styles.valueText}>{form.startTime}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ width: "48%" }}>
+            <Text style={styles.label}>End Time</Text>
+            <TouchableOpacity
+              style={[styles.inputWrapper, styles.halfInputWrapper]}
+              onPress={() => setShowPicker({ field: 'end', visible: true })}
+            >
+              <Ionicons name="play-outline" size={18} color="#006664" style={styles.inputIcon} />
+              <Text style={styles.valueText}>{form.endTime}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Room */}
+        <Text style={styles.label}>Room & Seat</Text>
+        <View style={styles.inputWrapper}>
+          <Ionicons name="location-outline" size={18} color="#006664" style={styles.inputIcon} />
+          <TextInput
+            style={styles.fullInput}
+            placeholder="Room 402, Seat A1"
+            placeholderTextColor="#A0AEC0"
+            value={form.roomNumber}
+            onChangeText={(text) => setForm({ ...form, roomNumber: text })}
+          />
+        </View>
+      </View>
+
+      {/* DateTimePicker */}
+      {showPicker.visible && (
+        <DateTimePicker
+          value={showPicker.field === 'date' ? form.rawDate : new Date()}
+          mode={showPicker.field === 'date' ? 'date' : 'time'}
+          is24Hour={true}
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={onDateTimeChange}
+        />
+      )}
+
+      {/* Footer Button */}
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.createButton} onPress={handleCreate} activeOpacity={0.85}>
+          <Ionicons name="checkmark-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.buttonText}>Save Exam Schedule</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f0f2f0",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1a3a3a",
+  },
+
+  /* Form */
+  label: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#006664",
+    marginBottom: 8,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  formContainer: {
+    padding: 20,
+  },
+  inputWrapper: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    marginBottom: 18,
+    paddingHorizontal: 15,
+    height: 55,
+    justifyContent: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e8ebe8',
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  halfInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  fullInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#2D3748",
+  },
+  valueText: {
+    flex: 1,
+    fontSize: 15,
+    color: "#2D3748",
+    fontWeight: '500',
+  },
+
+  /* Footer */
+  footer: {
+    paddingHorizontal: 30,
+    paddingBottom: 30,
+    paddingTop: 10,
+    alignItems: "center",
+  },
+  createButton: {
+    backgroundColor: "#006664",
+    width: "100%",
+    height: 55,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: 'row',
+    shadowColor: '#006664',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  buttonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+});
+
+export default CreateExamScreen;
