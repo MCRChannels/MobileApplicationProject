@@ -5,7 +5,9 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    Alert
+    Alert,
+    Modal,
+    TextInput
 } from 'react-native';
 import { EventContext } from "../context/eventContext";
 import { ExamContext } from "../context/examContext";
@@ -23,6 +25,44 @@ const TimeTableScreen = ({ navigation }) => {
     const { events, dispatch: eventDispatch } = useContext(EventContext);
     const { dispatch: examDispatch } = useContext(ExamContext);
     const [selectedDay, setSelectedDay] = useState('M');
+
+    // Share Schedule States
+    const [isShareModalVisible, setShareModalVisible] = useState(false);
+    const [isImportMode, setIsImportMode] = useState(false);
+    const [shareCodeInput, setShareCodeInput] = useState('');
+
+    const generateShareCode = () => {
+        if (events.length === 0) return 'ยังไม่มีวิชาเรียนในตาราง';
+        const minifiedEvents = events.map(e => ({ t: e.title, d: e.day, s: e.startTime, e: e.endTime, r: e.roomNumber || '' }));
+        return JSON.stringify(minifiedEvents);
+    };
+
+    const handleImport = () => {
+        if (!shareCodeInput.trim()) return;
+        try {
+            const parsed = JSON.parse(shareCodeInput.trim());
+            if (!Array.isArray(parsed)) throw new Error('Invalid format');
+
+            let added = 0;
+            parsed.forEach(e => {
+                if (e.t && e.d && e.s && e.e) {
+                    const isOverlap = events.find(ev => ev.day === e.d && ev.startTime === e.s);
+                    if (!isOverlap) {
+                        eventDispatch({
+                            type: 'ADD_OR_UPDATE',
+                            payload: { title: e.t, day: e.d, startTime: e.s, endTime: e.e, roomNumber: e.r }
+                        });
+                        added++;
+                    }
+                }
+            });
+            Alert.alert("นำเข้าสำเร็จ 🎉", `เพิ่มตารางเรียนทั้งหมด ${added} วิชาเรียบร้อย! (ข้ามช่วงเวลาที่มีวิชาเรียนอยู่แล้ว)`);
+            setShareModalVisible(false);
+            setShareCodeInput('');
+        } catch (error) {
+            Alert.alert("ขออภัย", "โค้ดแชร์ไม่ถูกต้อง หรือมีรูปแบบผิดพลาด กรุณาตรวจสอบอีกครั้ง");
+        }
+    };
 
     const dayMapping = {
         'M': 'Monday',
@@ -146,13 +186,22 @@ const TimeTableScreen = ({ navigation }) => {
                 <Text style={styles.ongoingTitle}>
                     {dayMapping[selectedDay]}'s Schedule
                 </Text>
-                <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() => navigation.navigate('Create')}
-                    activeOpacity={0.8}
-                >
-                    <Ionicons name="add" size={22} color="#fff" />
-                </TouchableOpacity>
+                <View style={styles.headerActionRow}>
+                    <TouchableOpacity
+                        style={[styles.addButton, { backgroundColor: '#2E86AB' }]}
+                        onPress={() => { setShareModalVisible(true); setIsImportMode(false); setShareCodeInput(''); }}
+                        activeOpacity={0.8}
+                    >
+                        <Ionicons name="share-social" size={18} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.addButton}
+                        onPress={() => navigation.navigate('Create')}
+                        activeOpacity={0.8}
+                    >
+                        <Ionicons name="add" size={22} color="#fff" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Timeline View */}
@@ -221,6 +270,71 @@ const TimeTableScreen = ({ navigation }) => {
                     </View>
                 </ScrollView>
             )}
+
+            {/* Share & Import Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={isShareModalVisible}
+                onRequestClose={() => setShareModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContainer}>
+                        {/* Close Modal Button */}
+                        <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShareModalVisible(false)}>
+                            <Ionicons name="close" size={22} color="#555" />
+                        </TouchableOpacity>
+
+                        {/* Header Tabs */}
+                        <View style={styles.modalTabs}>
+                            <TouchableOpacity
+                                style={[styles.modalTabBtn, !isImportMode && styles.modalTabActive]}
+                                onPress={() => setIsImportMode(false)}
+                            >
+                                <Text style={[styles.modalTabText, !isImportMode && styles.modalTabTextActive]}>ส่งตารางให้เพื่อน</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalTabBtn, isImportMode && styles.modalTabActive]}
+                                onPress={() => setIsImportMode(true)}
+                            >
+                                <Text style={[styles.modalTabText, isImportMode && styles.modalTabTextActive]}>นำเข้าตารางเรียน</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Content */}
+                        <View style={styles.modalBody}>
+                            {!isImportMode ? (
+                                <>
+                                    <Text style={styles.modalSubHead}>คัดลอกโค้ดด้านล่างแล้วส่งให้เพื่อนได้เลย!</Text>
+                                    <TextInput
+                                        style={styles.codeInputBox}
+                                        value={generateShareCode()}
+                                        multiline
+                                        editable={false}
+                                        selectTextOnFocus={true}
+                                    />
+                                    <Text style={styles.helperText}>*กดที่ช่องโค้ดค้างไว้ เพื่อคัดลอก (Copy)</Text>
+                                </>
+                            ) : (
+                                <>
+                                    <Text style={styles.modalSubHead}>วางโค้ดจากเพื่อนลงในช่องด้านล่างนี้</Text>
+                                    <TextInput
+                                        style={[styles.codeInputBox, { borderColor: '#2E86AB', backgroundColor: '#fff', fontSize: 13 }]}
+                                        placeholder="วางโค้ดที่นี่..."
+                                        placeholderTextColor="#ccc"
+                                        multiline
+                                        value={shareCodeInput}
+                                        onChangeText={setShareCodeInput}
+                                    />
+                                    <TouchableOpacity style={styles.importConfirmBtn} onPress={handleImport}>
+                                        <Text style={styles.importConfirmText}>ยืนยันการนำเข้าข้อมูล</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -304,6 +418,10 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         color: '#1a3a3a',
+    },
+    headerActionRow: {
+        flexDirection: 'row',
+        gap: 10,
     },
     addButton: {
         backgroundColor: '#006664',
@@ -439,6 +557,105 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#bbb',
         marginTop: 4,
+    },
+
+    /* Modal Styles */
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+    },
+    modalContainer: {
+        width: '100%',
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        overflow: 'hidden',
+        position: 'relative',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 15,
+        elevation: 10,
+    },
+    modalTabs: {
+        flexDirection: 'row',
+        backgroundColor: '#f5f5f5',
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        paddingTop: 10,
+    },
+    modalTabBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    modalTabActive: {
+        borderBottomWidth: 3,
+        borderBottomColor: '#006664',
+    },
+    modalTabText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#999',
+    },
+    modalTabTextActive: {
+        color: '#006664',
+        fontWeight: 'bold',
+    },
+    modalBody: {
+        padding: 24,
+    },
+    modalSubHead: {
+        fontSize: 14,
+        color: '#555',
+        marginBottom: 12,
+        fontWeight: '500',
+    },
+    codeInputBox: {
+        backgroundColor: '#f9f9f9',
+        borderWidth: 1.5,
+        borderColor: '#e8e8e8',
+        borderRadius: 12,
+        padding: 14,
+        fontSize: 12,
+        color: '#777',
+        minHeight: 120,
+        textAlignVertical: 'top',
+    },
+    helperText: {
+        fontSize: 11,
+        color: '#888',
+        marginTop: 10,
+        fontStyle: 'italic',
+        textAlign: 'center'
+    },
+    importConfirmBtn: {
+        backgroundColor: '#2E86AB',
+        borderRadius: 12,
+        paddingVertical: 14,
+        alignItems: 'center',
+        marginTop: 16,
+        shadowColor: '#2E86AB',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    importConfirmText: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
+    modalCloseBtn: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+        zIndex: 10,
+        padding: 6,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 20,
     },
 });
 

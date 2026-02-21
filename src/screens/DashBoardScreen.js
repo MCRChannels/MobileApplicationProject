@@ -32,6 +32,7 @@ const DashBoardScreen = ({ navigation }) => {
             let classesToday = events.filter(e => e.day === checkDayName);
 
             if (i === 0) {
+                // สำหรับวันนี้, หาคลาสที่เวลายังมาไม่ถึง
                 classesToday = classesToday.filter(e => {
                     const [h, m] = e.startTime.split(':').map(Number);
                     const classTimeInMinutes = h * 60 + m;
@@ -40,6 +41,7 @@ const DashBoardScreen = ({ navigation }) => {
             }
 
             if (classesToday.length > 0) {
+                // เรียงตามเวลา
                 classesToday.sort((a, b) => {
                     const [h1, m1] = a.startTime.split(':').map(Number);
                     const [h2, m2] = b.startTime.split(':').map(Number);
@@ -69,31 +71,6 @@ const DashBoardScreen = ({ navigation }) => {
     return (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 90 }} showsVerticalScrollIndicator={false}>
 
-            {/* --- Stats Row --- */}
-            <View style={styles.statsRow}>
-                <View style={styles.statCard}>
-                    <View style={[styles.statIcon, { backgroundColor: '#006664' + '18' }]}>
-                        <Ionicons name="school-outline" size={20} color="#006664" />
-                    </View>
-                    <Text style={styles.statNumber}>{totalClasses}</Text>
-                    <Text style={styles.statLabel}>Classes</Text>
-                </View>
-                <View style={styles.statCard}>
-                    <View style={[styles.statIcon, { backgroundColor: '#A23B72' + '18' }]}>
-                        <Ionicons name="document-text-outline" size={20} color="#A23B72" />
-                    </View>
-                    <Text style={styles.statNumber}>{totalExams}</Text>
-                    <Text style={styles.statLabel}>Exams</Text>
-                </View>
-                <View style={styles.statCard}>
-                    <View style={[styles.statIcon, { backgroundColor: '#2E86AB' + '18' }]}>
-                        <Ionicons name="today-outline" size={20} color="#2E86AB" />
-                    </View>
-                    <Text style={styles.statNumber}>{totalClasses + totalExams}</Text>
-                    <Text style={styles.statLabel}>Total</Text>
-                </View>
-            </View>
-
             {/* --- Next Class Card --- */}
             <TouchableOpacity
                 style={styles.nextClassCard}
@@ -107,70 +84,70 @@ const DashBoardScreen = ({ navigation }) => {
                     <View style={styles.nextClassBadge}>
                         <Ionicons name="school" size={16} color="#fff" />
                     </View>
-                    <Text style={styles.headText}>NEXT CLASS</Text>
+                    <Text style={styles.headText}>คลาสเรียนต่อไป</Text>
                 </View>
 
                 {nextClass ? (
                     <View style={styles.nextClassBody}>
-                        <Text style={styles.subHeadText}>{nextClass.title}</Text>
+                        <Text style={styles.subHeadText} numberOfLines={2}>{nextClass.title}</Text>
                         <View style={styles.nextClassDetails}>
                             <View style={styles.nextClassInfoRow}>
-                                <Ionicons name="time-outline" size={15} color="rgba(255,255,255,0.7)" />
+                                <Ionicons name="time-outline" size={16} color="#E2E8F0" />
                                 <Text style={styles.infoText}>
-                                    {nextClass.startTime} - {nextClass.endTime}
+                                    เวลา: {nextClass.startTime} - {nextClass.endTime}
                                 </Text>
                             </View>
                             <View style={styles.nextClassInfoRow}>
-                                <Ionicons name="calendar-outline" size={15} color="rgba(255,255,255,0.7)" />
-                                <Text style={styles.infoText}>{nextClass.day}</Text>
+                                <Ionicons name="calendar-outline" size={16} color="#E2E8F0" />
+                                <Text style={styles.infoText}>วัน: {nextClass.day}</Text>
                             </View>
                             <View style={styles.nextClassInfoRow}>
-                                <Ionicons name="location-outline" size={15} color="rgba(255,255,255,0.7)" />
-                                <Text style={styles.infoText}>{nextClass.roomNumber || 'No Room'}</Text>
+                                <Ionicons name="location-outline" size={16} color="#E2E8F0" />
+                                <Text style={styles.infoText}>สถานที่: {nextClass.roomNumber || 'ไม่ระบุห้อง'}</Text>
                             </View>
                         </View>
                     </View>
                 ) : (
-                    <View style={styles.nextClassBody}>
-                        <Text style={[styles.subHeadText, { fontSize: 17 }]}>
-                            No upcoming classes
+                    <View style={[styles.nextClassBody, { paddingVertical: 10 }]}>
+                        <Text style={[styles.subHeadText, { fontSize: 20, marginBottom: 4 }]}>
+                            ไม่มีคลาสเร็วๆนี้
                         </Text>
-                        <Text style={styles.infoText}>Enjoy your free time!</Text>
+                        <Text style={styles.infoText}>พักผ่อนให้เต็มที่ หรือทบทวนบทเรียนได้เลย!</Text>
                     </View>
                 )}
             </TouchableOpacity>
 
             {/* --- Quick Add Section --- */}
             <View style={styles.quickHeader}>
-                <Text style={styles.sectionTitle}>QUICK ADD</Text>
+                <Text style={styles.sectionTitle}>เมนูจัดการด่วน</Text>
             </View>
             <View style={styles.quickRow}>
                 <TouchableOpacity style={styles.quickButton} onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Create' })} activeOpacity={0.8}>
-                    <View style={[styles.quickIconWrap, { backgroundColor: '#006664' }]}>
-                        <Ionicons name="calendar-outline" size={18} color="#fff" />
+                    <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(0,102,100,0.1)' }]}>
+                        <Ionicons name="add-circle" size={24} color="#006664" />
                     </View>
-                    <Text style={styles.quickText}>Class</Text>
+                    <Text style={styles.quickText}>เพิ่มวิชา</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.quickButton} activeOpacity={0.8}>
-                    <View style={[styles.quickIconWrap, { backgroundColor: '#2E86AB' }]}>
-                        <Ionicons name="checkbox-outline" size={18} color="#fff" />
+                    <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(46,134,171,0.1)' }]}>
+                        <Ionicons name="list-circle" size={24} color="#2E86AB" />
                     </View>
-                    <Text style={styles.quickText}>Task</Text>
+                    <Text style={styles.quickText}>เพิ่มงาน</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.quickButton} onPress={() => navigation.navigate('TimeTableScreen', { screen: 'CreateExam' })} activeOpacity={0.8}>
-                    <View style={[styles.quickIconWrap, { backgroundColor: '#A23B72' }]}>
-                        <Ionicons name="document-text-outline" size={18} color="#fff" />
+                    <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(162,59,114,0.1)' }]}>
+                        <Ionicons name="information-circle" size={24} color="#A23B72" />
                     </View>
-                    <Text style={styles.quickText}>Exam</Text>
+                    <Text style={styles.quickText}>เพิ่มสอบ</Text>
                 </TouchableOpacity>
             </View>
 
             {/* --- Upcoming Exam Section --- */}
             <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>UPCOMING EXAMS</Text>
+                <Text style={styles.sectionTitle}>สอบที่กำลังจะมาถึง</Text>
                 {upcomingExams.length > 0 && (
                     <TouchableOpacity onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Exam' })}>
-                        <Text style={styles.seeAllText}>See All</Text>
+                        <Text style={styles.seeAllText}>เปิดดูตารางสอบทั้งหมด</Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -190,28 +167,32 @@ const DashBoardScreen = ({ navigation }) => {
                                 <Text style={styles.examTitle}>{exam.title}</Text>
                                 <View style={styles.examMeta}>
                                     <View style={styles.examInfoRow}>
-                                        <Ionicons name="calendar-outline" size={12} color="#999" />
+                                        <Ionicons name="calendar-outline" size={14} color="#777" />
                                         <Text style={styles.examDetail}>{exam.date}</Text>
                                     </View>
                                     <View style={styles.examInfoRow}>
-                                        <Ionicons name="time-outline" size={12} color="#999" />
+                                        <Ionicons name="time-outline" size={14} color="#777" />
                                         <Text style={styles.examDetail}>{exam.startTime} - {exam.endTime}</Text>
                                     </View>
                                 </View>
                             </View>
-                            <Ionicons name="chevron-forward" size={18} color="#ddd" />
+                            <View style={styles.examRoomBadge}>
+                                <Ionicons name="location" size={12} color="#fff" />
+                                <Text style={styles.examRoomText}>{exam.roomNumber || 'No Room'}</Text>
+                            </View>
                         </TouchableOpacity>
                     );
                 })
             ) : (
                 <View style={styles.emptyExamCard}>
-                    <Ionicons name="document-text-outline" size={36} color="#ccc" />
-                    <Text style={styles.emptyExamText}>No upcoming exams</Text>
+                    <Ionicons name="document-text-outline" size={40} color="#ddd" />
+                    <Text style={styles.emptyExamText}>ยังไม่มีวิชาสอบในตอนนี้</Text>
                     <TouchableOpacity
                         style={styles.emptyAddBtn}
                         onPress={() => navigation.navigate('TimeTableScreen', { screen: 'CreateExam' })}
                     >
-                        <Text style={styles.emptyAddText}>+ Add Exam</Text>
+                        <Ionicons name="add" size={16} color="#fff" style={{ marginRight: 4 }} />
+                        <Text style={styles.emptyAddText}>บันทึกตารางสอบเลย</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -222,7 +203,7 @@ const DashBoardScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f0f2f0',
+        backgroundColor: '#f8faf9',
         paddingTop: 10,
         paddingHorizontal: 20,
     },
@@ -230,159 +211,160 @@ const styles = StyleSheet.create({
     /* Stats Row */
     statsRow: {
         flexDirection: 'row',
-        gap: 10,
-        marginBottom: 16,
+        gap: 12,
+        marginBottom: 20,
     },
     statCard: {
         flex: 1,
         backgroundColor: '#fff',
-        borderRadius: 14,
-        padding: 14,
+        borderRadius: 16,
+        padding: 16,
         alignItems: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowRadius: 6,
+        elevation: 3,
     },
     statIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
+        width: 44,
+        height: 44,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 10,
     },
     statNumber: {
-        fontSize: 20,
+        fontSize: 24,
         fontWeight: 'bold',
         color: '#1a3a3a',
     },
     statLabel: {
-        fontSize: 11,
-        color: '#999',
-        fontWeight: '600',
-        marginTop: 2,
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#666',
+        marginTop: 4,
     },
 
     /* Section */
     sectionTitle: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#999',
-        letterSpacing: 1,
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333',
     },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: 22,
-        marginBottom: 12,
+        marginTop: 24,
+        marginBottom: 14,
     },
     seeAllText: {
-        fontSize: 13,
+        fontSize: 14,
+        fontWeight: '700',
         color: '#006664',
-        fontWeight: '600',
+        textDecorationLine: 'underline',
     },
 
     /* Next Class Card */
     nextClassCard: {
         backgroundColor: '#006664',
         borderRadius: 20,
-        padding: 22,
+        padding: 24,
         width: '100%',
         shadowColor: '#006664',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.3,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35,
         shadowRadius: 10,
         elevation: 8,
-        minHeight: 160,
+        minHeight: 180,
         overflow: 'hidden',
     },
     decorCircle: {
         position: 'absolute',
-        top: -30,
-        right: -30,
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        top: -40,
+        right: -40,
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        backgroundColor: 'rgba(255,255,255,0.08)',
     },
     nextClassHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
-        marginBottom: 14,
+        gap: 12,
+        marginBottom: 16,
     },
     nextClassBadge: {
-        width: 30,
-        height: 30,
-        borderRadius: 8,
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,255,255,0.25)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     nextClassBody: {
-        gap: 6,
+        gap: 8,
     },
     nextClassDetails: {
-        marginTop: 6,
-        gap: 5,
+        marginTop: 8,
+        gap: 8,
     },
     nextClassInfoRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
     },
     headText: {
-        color: 'rgba(255,255,255,0.7)',
-        fontSize: 13,
+        color: 'rgba(255,255,255,0.85)',
+        fontSize: 15,
         fontWeight: '700',
-        letterSpacing: 1.2,
+        letterSpacing: 0.5,
     },
     subHeadText: {
         color: 'white',
-        fontSize: 24,
+        fontSize: 26,
         fontWeight: 'bold',
     },
     infoText: {
-        color: 'rgba(255,255,255,0.8)',
-        fontSize: 14,
+        color: 'rgba(255,255,255,0.9)',
+        fontSize: 15,
+        fontWeight: '500',
     },
 
     /* Quick Add */
     quickHeader: {
-        marginTop: 22,
-        marginBottom: 12,
+        marginTop: 24,
+        marginBottom: 14,
     },
     quickRow: {
         flexDirection: 'row',
-        gap: 10,
+        gap: 12,
     },
     quickButton: {
         flex: 1,
         backgroundColor: '#fff',
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 14,
-        paddingVertical: 16,
-        gap: 8,
+        borderRadius: 16,
+        paddingVertical: 18,
+        gap: 10,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.06,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 3,
     },
     quickIconWrap: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
+        width: 48,
+        height: 48,
+        borderRadius: 14,
         justifyContent: 'center',
         alignItems: 'center',
     },
     quickText: {
-        fontSize: 13,
-        fontWeight: '600',
+        fontSize: 14,
+        fontWeight: 'bold',
         color: '#444',
     },
 
@@ -391,19 +373,19 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#fff',
-        borderRadius: 14,
-        marginBottom: 10,
-        paddingVertical: 16,
+        borderRadius: 16,
+        marginBottom: 12,
+        paddingVertical: 18,
         paddingRight: 16,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
+        elevation: 3,
         overflow: 'hidden',
     },
     examAccent: {
-        width: 4,
+        width: 6,
         height: '100%',
         marginRight: 16,
     },
@@ -411,55 +393,71 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     examTitle: {
-        fontSize: 15,
+        fontSize: 17,
         fontWeight: 'bold',
         color: '#2D3748',
-        marginBottom: 4,
+        marginBottom: 6,
     },
     examMeta: {
         flexDirection: 'row',
-        gap: 14,
+        gap: 16,
     },
     examInfoRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
+        gap: 6,
     },
     examDetail: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#666',
+    },
+    examRoomBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#4A5568',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 20,
+        gap: 4,
+    },
+    examRoomText: {
+        color: '#fff',
         fontSize: 12,
-        color: '#999',
-        fontWeight: '500',
+        fontWeight: '700',
     },
 
     /* Empty Exam */
     emptyExamCard: {
         width: '100%',
-        borderWidth: 1.5,
-        borderColor: '#e0e0e0',
+        borderWidth: 2,
+        borderColor: '#e2e8f0',
         borderStyle: 'dashed',
-        borderRadius: 16,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff',
-        paddingVertical: 28,
-        gap: 8,
+        backgroundColor: '#f8fafc',
+        paddingVertical: 36,
+        gap: 12,
     },
     emptyExamText: {
-        color: '#bbb',
-        fontSize: 14,
-        fontWeight: '500',
+        color: '#94a3b8',
+        fontSize: 16,
+        fontWeight: '600',
     },
     emptyAddBtn: {
-        marginTop: 4,
+        marginTop: 6,
         backgroundColor: '#006664',
-        paddingHorizontal: 18,
-        paddingVertical: 8,
-        borderRadius: 8,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 10,
+        flexDirection: 'row',
+        alignItems: 'center'
     },
     emptyAddText: {
         color: '#fff',
-        fontSize: 13,
-        fontWeight: '600',
+        fontSize: 14,
+        fontWeight: 'bold',
     },
 });
 

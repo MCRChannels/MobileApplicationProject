@@ -3,8 +3,8 @@ import { StyleSheet, Text, View, Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons, EvilIcons, MaterialCommunityIcons, SimpleLineIcons, MaterialIcons } from '@expo/vector-icons';
-
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import ActivityScreen from "./src/screens/ActivityScreen";
 import DashboardScreen from "./src/screens/DashBoardScreen";
@@ -52,7 +52,7 @@ const TimeTableStack = () => {
 const AllTabsScreen = () => {
   return (
     <Tab.Navigator
-      initialRouteName="ActivityScreen"
+      initialRouteName="DashboardScreen"
       screenOptions={{
         headerTintColor: '#fff',
         headerStyle: { height: 100, backgroundColor: '#006664', borderBottomLeftRadius: 15, borderBottomRightRadius: 15 },
@@ -94,28 +94,30 @@ const AllTabsScreen = () => {
 
 export default function App() {
   return (
-    <UserProvider>
-      <TaskProvider>
-        <EventProvider>
-          <ExamProvider>
-            <NavigationContainer>
-              <Stack.Navigator initialRouteName="Register" screenOptions={{ headerTintColor: '#fff', headerStyle: { backgroundColor: '#006664', borderBottomRightRadius: 20, borderBottomLeftRadius: 20, position: 'absolute', height: 100 } }}>
-                <Stack.Screen
-                  name="Register"
-                  component={Register}
-                  options={{ headerShown: false }}
-                />
+    <SafeAreaProvider>
+      <UserProvider>
+        <TaskProvider>
+          <EventProvider>
+            <ExamProvider>
+              <NavigationContainer>
+                <Stack.Navigator initialRouteName="Register" screenOptions={{ headerTintColor: '#fff', headerStyle: { backgroundColor: '#006664', borderBottomRightRadius: 20, borderBottomLeftRadius: 20, position: 'absolute', height: 100 } }}>
+                  <Stack.Screen
+                    name="Register"
+                    component={Register}
+                    options={{ headerShown: false }}
+                  />
 
-                <Stack.Screen
-                  name="HomeApp"
-                  component={AllTabsScreen}
-                  options={{ headerShown: false }}
-                />
-              </Stack.Navigator>
-            </NavigationContainer >
-          </ExamProvider>
-        </EventProvider>
-      </TaskProvider>
-    </UserProvider>
+                  <Stack.Screen
+                    name="HomeApp"
+                    component={AllTabsScreen}
+                    options={{ headerShown: false }}
+                  />
+                </Stack.Navigator>
+              </NavigationContainer >
+            </ExamProvider>
+          </EventProvider>
+        </TaskProvider>
+      </UserProvider>
+    </SafeAreaProvider>
   );
 }

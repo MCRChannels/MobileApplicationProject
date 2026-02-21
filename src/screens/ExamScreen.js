@@ -1,245 +1,318 @@
-import React, { useState } from 'react';
+import React, { useContext } from "react";
 import {
-    View,
     Text,
+    View,
     StyleSheet,
     TouchableOpacity,
-    SectionList,
-    SafeAreaView
+    FlatList,
+    Alert
 } from 'react-native';
+import { EventContext } from "../context/eventContext";
+import { ExamContext } from "../context/examContext";
+import { Ionicons } from '@expo/vector-icons';
 
-import { Feather } from "@expo/vector-icons";
+const CARD_COLORS = [
+    '#A23B72', '#2E86AB', '#006664', '#F18F01', '#C73E1D', '#3B1F2B', '#44BBA4'
+];
 
 const ExamScreen = ({ navigation }) => {
-    
-    const renderItem = ({ item }) => (
-        <View style={[styles.card, { borderColor: item.borderColor }]}>
-            <View style={styles.cardHeader}>
-                <View style={styles.timeContainer}>
-                    <Text style={styles.iconText}>{item.icon}</Text>
-                    <Text style={styles.timeText}>{item.time}</Text>
-                </View>
+    const { exams, dispatch: examDispatch } = useContext(ExamContext);
+    const { events, dispatch: eventDispatch } = useContext(EventContext);
 
-                <View style={styles.rightActions}>
-                    {item.badges.length > 0 && (
-                        <View style={styles.badgeContainer}>
-                            {item.badges.map((color, index) => (
-                                <View key={index} style={[styles.badge, { backgroundColor: color }]} />
-                            ))}
+    // เรียงวันที่จากใกล้ไปไกล
+    const sortedExams = [...exams].sort((a, b) => {
+        const dateA = new Date(a.date.split('/').reverse().join('-'));
+        const dateB = new Date(b.date.split('/').reverse().join('-'));
+        if (dateA < dateB) return -1;
+        if (dateA > dateB) return 1;
+
+        const [h1, m1] = a.startTime.split(':').map(Number);
+        const [h2, m2] = b.startTime.split(':').map(Number);
+        return (h1 * 60 + m1) - (h2 * 60 + m2);
+    });
+
+    const handleDelete = (item) => {
+        const hasMatchingClass = events.some(e => e.title.toLowerCase() === item.title.toLowerCase());
+
+        if (hasMatchingClass) {
+            Alert.alert(
+                "ลบข้อมูล",
+                `พบวิชาเรียนชื่อ "${item.title}" ด้วย คุณต้องการลบทั้งตารางเรียนและตารางสอบเลยหรือไม่?`,
+                [
+                    { text: "ยกเลิก", style: "cancel" },
+                    {
+                        text: "ลบแค่สอบ",
+                        onPress: () => {
+                            examDispatch({ type: 'DELETE_EXAM', payload: item.title });
+                        }
+                    },
+                    {
+                        text: "ลบทั้งคู่",
+                        style: "destructive",
+                        onPress: () => {
+                            examDispatch({ type: 'DELETE_EXAM', payload: item.title });
+                            eventDispatch({ type: 'DELETE_EVENT', payload: item.title });
+                        }
+                    }
+                ]
+            );
+        } else {
+            Alert.alert(
+                "ลบข้อมูล",
+                "คุณต้องการลบวิชาสอบนี้ออกใช่หรือไม่?",
+                [
+                    { text: "ยกเลิก", style: "cancel" },
+                    {
+                        text: "ลบข้อมูล",
+                        style: "destructive",
+                        onPress: () => {
+                            examDispatch({ type: 'DELETE_EXAM', payload: item.title });
+                        }
+                    }
+                ]
+            );
+        }
+    };
+
+    const renderItem = ({ item, index }) => {
+        const cardColor = CARD_COLORS[index % CARD_COLORS.length];
+
+        return (
+            <View style={[styles.examCard, { backgroundColor: cardColor }]}>
+                {/* ปุ่มลบ */}
+                <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleDelete(item)}
+                >
+                    <Ionicons name="trash-outline" size={14} color="#fff" />
+                </TouchableOpacity>
+
+                <View style={styles.eventContent}>
+                    <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
+                    <Text style={styles.eventRoom} numberOfLines={1}>
+                        {item.roomNumber ? `📍 ${item.roomNumber}` : '📍 No Room'}
+                    </Text>
+
+                    <View style={styles.eventBottomRow}>
+                        <View style={styles.eventDateBox}>
+                            <Ionicons name="calendar-outline" size={13} color="#fff" style={{ marginRight: 4 }} />
+                            <Text style={styles.eventDateText}>
+                                {item.date}
+                            </Text>
                         </View>
-                    )}
-                    <TouchableOpacity>
-                        <Text style={styles.moreIcon}>⋮</Text>
-                    </TouchableOpacity>
+
+                        <Text style={styles.eventTime}>
+                            {item.startTime} - {item.endTime}
+                        </Text>
+                    </View>
                 </View>
             </View>
-
-            <Text style={styles.titleText}>{item.title}</Text>
-            <Text style={styles.descriptionText}>{item.description}</Text>
-        </View>
-    );
-
-    const renderSectionHeader = ({ section: { dateTitle } }) => (
-        <View style={styles.sectionHeader}>
-            <Text style={styles.dueText}>Due. </Text>
-            <Text style={styles.dateTitleText}>{dateTitle}</Text>
-        </View>
-    );
+        );
+    };
 
     return (
-        <SafeAreaView style={styles.container}>
-          
-            <View style={styles.header}>
-
-                <View style={styles.toggleContainer}>
-                    <TouchableOpacity 
-                        style={styles.cardheader} 
-                        onPress={() => navigation.navigate('TimeTable')}
-                    >
-                        <Text style={styles.headertext}>ตารางเรียน</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                        style={styles.cardheader}
-                        // หน้าตารางสอบ ไม่ต้องใส่ Action เพราะอยู่ที่หน้านี้อยู่แล้ว
-                    >
-                        <Text style={styles.headertext}>ตารางสอบ</Text>
-                    </TouchableOpacity>
-                </View>
-
-             
-                <View style={{ width: 24 }} />
-            </View>
-
-
-            
-            <View style={styles.addActionContainer}>
-                <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('CreateExam')} >
-                    <Text style={styles.addButtonText}>+</Text>
+        <View style={styles.container}>
+            {/* Tab Header */}
+            <View style={styles.tabHeaderRow}>
+                <TouchableOpacity
+                    style={styles.tabHeaderBtn}
+                    onPress={() => navigation.navigate('TimeTable')}
+                >
+                    <Text style={styles.tabHeaderText}>ตารางเรียน</Text>
                 </TouchableOpacity>
-                <Text style={styles.ongoingTitle}>Exam Schedule </Text>
-                
+
+                <TouchableOpacity style={[styles.tabHeaderBtn, styles.tabHeaderActive]}>
+                    <Text style={[styles.tabHeaderText, styles.tabHeaderTextActive]}>ตารางสอบ</Text>
+                </TouchableOpacity>
             </View>
 
-            
-            <SectionList
-                sections={examData}
+            {/* Schedule Header */}
+            <View style={styles.ongoingHeader}>
+                <Text style={styles.ongoingTitle}>
+                    Exam Schedule
+                </Text>
+                <TouchableOpacity
+                    style={styles.addButton}
+                    onPress={() => navigation.navigate('CreateExam')}
+                    activeOpacity={0.8}
+                >
+                    <Ionicons name="add" size={22} color="#fff" />
+                </TouchableOpacity>
+            </View>
+
+            {/* Exam List */}
+            <FlatList
+                data={sortedExams}
                 keyExtractor={(item) => item.id}
                 renderItem={renderItem}
-                renderSectionHeader={renderSectionHeader}
-                contentContainerStyle={{ paddingBottom: 20 }}
-                showsVerticalScrollIndicator={false}
+                style={styles.listContainer}
+                contentContainerStyle={{ paddingBottom: 80 }}
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                        <Ionicons name="document-text-outline" size={50} color="#ccc" />
+                        <Text style={styles.emptyText}>ไม่มีตารางสอบ</Text>
+                        <Text style={styles.emptySubText}>โชคดีไปนะมึง!</Text>
+                    </View>
+                }
             />
-        </SafeAreaView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: 'rgb(233, 233, 233)',
-        paddingTop: 20,
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 20,
-    },
-    
-    toggleContainer: {
-        flexDirection: 'row',
-        alignContent: 'center',
-        justifyContent: 'center',
-        gap: 20,
-    },
-    cardheader: {
-       width: 100,
-       flexDirection: 'row',
-        justifyContent: 'space-between',
-        height: 35,
-        backgroundColor: 'rgb(255, 255, 255)',
-        borderRadius: 15,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
-        position: 'relative',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderColor: '#006110',
-        borderWidth: 1
-    },
-    headertext: {
-        textAlign: 'center',
-        fontWeight: 'bold',
-        color: '#000'
+        backgroundColor: '#f0f2f0',
+        paddingTop: 15,
     },
 
-    addActionContainer: {
-        flexDirection : 'row',
-       alignItems: 'flex-start',
-        paddingHorizontal: 20,
-        marginBottom: 10,
-    },
-    addButton: {
-        backgroundColor: '#35CDBE',
-        width: 35,
-        height: 35,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    addButtonText: {
-        color: '#fff',
-        fontSize: 24,
-        lineHeight: 26,
-    },
-    sectionHeader: {
+    /* Tab Header */
+    tabHeaderRow: {
         flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 12,
+        marginBottom: 20,
         paddingHorizontal: 20,
-        marginTop: 10,
-        marginBottom: 10,
     },
-    dueText: {
-        fontSize: 14,
-        color: '#A0AEC0',
-    },
-    dateTitleText: {
-        fontSize: 14,
-        color: '#4A5568',
-        fontWeight: '500',
-    },
-    card: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 1,
-        borderRadius: 12,
-        padding: 15,
-        marginHorizontal: 20,
-        marginBottom: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
+    tabHeaderBtn: {
+        paddingVertical: 8,
+        paddingHorizontal: 22,
+        borderRadius: 20,
+        backgroundColor: '#fff',
+        borderWidth: 1.5,
+        borderColor: '#ddd',
         elevation: 1,
     },
-    ongoingTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#111',
+    tabHeaderActive: {
+        backgroundColor: '#006664',
+        borderColor: '#006664',
     },
-    cardHeader: {
+    tabHeaderText: {
+        fontWeight: 'bold',
+        fontSize: 13,
+        color: '#555',
+    },
+    tabHeaderTextActive: {
+        color: '#fff',
+    },
+
+    /* Schedule Header */
+    ongoingHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 10,
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        marginBottom: 15,
     },
-    timeContainer: {
+    ongoingTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1a3a3a',
+    },
+    addButton: {
+        backgroundColor: '#006664',
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#006664',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 4,
+    },
+
+    /* List Container */
+    listContainer: {
+        flex: 1,
+        paddingHorizontal: 20,
+    },
+
+    /* Exam Cards */
+    examCard: {
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+        elevation: 4,
+        position: 'relative',
+        minHeight: 100,
+    },
+    eventContent: {
+        flex: 1,
+        justifyContent: 'flex-start',
+    },
+    eventTitle: {
+        color: '#fff',
+        fontSize: 17,
+        fontWeight: 'bold',
+        paddingRight: 30,
+        marginBottom: 4,
+    },
+    eventRoom: {
+        color: 'rgba(255,255,255,0.75)',
+        fontSize: 13,
+        marginBottom: 14,
+    },
+    eventBottomRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 'auto',
+    },
+    eventDateBox: {
         flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
     },
-    iconText: {
-        fontSize: 16,
-        marginRight: 8,
-    },
-    timeText: {
+    eventDateText: {
+        color: '#fff',
         fontSize: 12,
-        color: '#A0AEC0',
-        fontWeight: '500',
+        fontWeight: '600',
     },
-    rightActions: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
+    eventTime: {
+        color: 'rgba(255,255,255,0.85)',
+        fontSize: 12,
+        fontWeight: '600',
     },
-    badgeContainer: {
-        marginRight: 10,
-        gap: 4,
+
+    /* Delete Button */
+    deleteButton: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        width: 26,
+        height: 26,
+        backgroundColor: 'rgba(255,255,255,0.25)',
+        borderRadius: 13,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1,
     },
-    badge: {
-        width: 12,
-        height: 12,
-        borderRadius: 3,
+
+    /* Empty State */
+    emptyContainer: {
+        alignItems: 'center',
+        marginTop: 60,
     },
-    moreIcon: {
-        fontSize: 20,
-        color: '#CBD5E0',
-        fontWeight: 'bold',
-        lineHeight: 20,
+    emptyText: {
+        fontSize: 17,
+        color: '#999',
+        fontWeight: '600',
+        marginTop: 12,
     },
-    titleText: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#2D3748',
-        marginBottom: 5,
-    },
-    descriptionText: {
+    emptySubText: {
         fontSize: 13,
-        color: '#718096',
-        lineHeight: 18,
-    }
+        color: '#bbb',
+        marginTop: 4,
+    },
 });
 
 export default ExamScreen;
