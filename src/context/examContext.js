@@ -1,12 +1,14 @@
 import React, { createContext, useReducer } from "react";
+import { collection, addDoc, deleteDoc, doc } from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
-// 1. สร้าง Context สำหรับการสอบ
 export const ExamContext = createContext();
 
 const examReducer = (state, action) => {
   switch (action.type) {
+    case "SET_EXAMS":
+      return action.payload;
     case "ADD_OR_UPDATE":
-      // เช็คว่ามีสอบใน "วัน" และ "เวลาเริ่ม" เดียวกันอยู่แล้วหรือไม่
       const isOverlap = state.find(
         (exam) =>
           exam.date === action.payload.date &&
@@ -14,18 +16,15 @@ const examReducer = (state, action) => {
       );
 
       if (isOverlap) {
-        // ถ้าซ้ำ วัน/เวลาเดิม จะไม่เพิ่มข้อมูลใหม่ (เพื่อกันความสับสนในตารางสอบ)
         return state;
       }
 
-      // ถ้าไม่ซ้ำ ให้เพิ่มเป็นรายการใหม่
-      return [
-        {
-          ...action.payload,
-          id: Date.now().toString(), // สร้าง ID เฉพาะตัวด้วย Timestamp
-        },
-        ...state,
-      ];
+      const newExam = {
+        ...action.payload,
+        id: action.payload.firestoreId || action.payload.id || Date.now().toString(),
+      };
+
+      return [newExam, ...state];
 
     case "UPDATE_EXAM":
       return state.map((exam) =>
@@ -33,7 +32,18 @@ const examReducer = (state, action) => {
       );
 
     case "DELETE_EXAM":
-      return state.filter((exam) => exam.title.toLowerCase() !== action.payload.toLowerCase());
+      // Support both string payload (title) and object payload ({title, userId, firestoreId})
+      const delTitle = typeof action.payload === 'string' ? action.payload : action.payload?.title;
+      const delUserId = typeof action.payload === 'object' ? action.payload?.userId : null;
+      const delFirestoreId = typeof action.payload === 'object' ? action.payload?.firestoreId : null;
+
+      if (delUserId && delFirestoreId) {
+        deleteDoc(doc(db, "users", delUserId, "exams", delFirestoreId))
+          .catch(err => console.log("Delete exam error:", err));
+      }
+      if (!delTitle) return state;
+      return state.filter((exam) => exam.title?.toLowerCase() !== delTitle.toLowerCase());
+
     case "CLEAR_ALL":
       return [];
 

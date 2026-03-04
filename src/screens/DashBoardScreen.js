@@ -1,418 +1,635 @@
-import React, { useContext, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useContext, useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, TouchableWithoutFeedback } from 'react-native';
 import { EventContext } from '../context/eventContext';
 import { ExamContext } from '../context/examContext';
+import { UserContext } from '../context/userContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { collection, getDocs } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "../firebaseConfig";
 
 const DashBoardScreen = ({ navigation }) => {
     const { events } = useContext(EventContext);
     const { exams } = useContext(ExamContext);
-    const [nextClass, setNextClass] = useState(null);
+    const { currentUser } = useContext(UserContext);
 
-    const findNextClass = useCallback(() => {
-        if (!events || events.length === 0) {
-            setNextClass(null);
-            return;
+    // --- States ---
+    const [timeFilter, setTimeFilter] = useState('today'); // 'today', 'week', 'month'
+    const [activeTab, setActiveTab] = useState('classes'); // 'classes', 'exams', 'activities'
+    const [activities, setActivities] = useState([]);
+    const [loadingActivities, setLoadingActivities] = useState(false);
+    const [isFabMenuVisible, setIsFabMenuVisible] = useState(false);
+
+    // --- Date Helpers ---
+    const getStartOfDay = (date = new Date()) => new Date(date.setHours(0, 0, 0, 0));
+    const getEndOfDay = (date = new Date()) => new Date(date.setHours(23, 59, 59, 999));
+
+    const getStartOfWeek = (date = new Date()) => {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday is start of week
+        return getStartOfDay(new Date(d.setDate(diff)));
+    };
+    const getEndOfWeek = (date = new Date()) => {
+        const start = getStartOfWeek(date);
+        return getEndOfDay(new Date(start.setDate(start.getDate() + 6)));
+    };
+
+    const getStartOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth(), 1);
+    const getEndOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const parseCustomDate = (dateString) => {
+        if (!dateString) return null; // FIX: If no date provided, don't fall back to "today"
+
+        // Handle "DD/MM/YYYY" or "YYYY-MM-DD" (Exams format)
+        if (dateString.includes('/')) {
+            const parts = dateString.split('/');
+            // Assumes DD/MM/YYYY
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+        } else if (dateString.includes('-')) {
+            return new Date(dateString);
         }
 
-        const daysOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        const now = new Date();
-        const currentDayIndex = now.getDay();
-        const currentHour = now.getHours();
-        const currentMinute = now.getMinutes();
-        const currentTimeInMinutes = currentHour * 60 + currentMinute;
+        // Handle "15 มี.ค. 2026" (Activities format)
+        const parts = dateString.split(' ');
+        if (parts.length === 3) {
+            const dayStr = parts[0];
+            const monthStr = parts[1];
+            const yearStr = parts[2];
 
-        let foundClass = null;
+            const day = parseInt(dayStr, 10);
+            const year = parseInt(yearStr, 10) > 2500 ? parseInt(yearStr, 10) - 543 : parseInt(yearStr, 10); // Handle Buddhist year just in case
 
-        for (let i = 0; i < 7; i++) {
-            const checkDayIndex = (currentDayIndex + i) % 7;
-            const checkDayName = daysOrder[checkDayIndex];
+            const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+            const month = thaiMonths.findIndex(m => m === monthStr);
 
-            let classesToday = events.filter(e => e.day === checkDayName);
-
-            if (i === 0) {
-                // สำหรับวันนี้, หาคลาสที่เวลายังมาไม่ถึง
-                classesToday = classesToday.filter(e => {
-                    const [h, m] = e.startTime.split(':').map(Number);
-                    const classTimeInMinutes = h * 60 + m;
-                    return classTimeInMinutes > currentTimeInMinutes;
-                });
-            }
-
-            if (classesToday.length > 0) {
-                // เรียงตามเวลา
-                classesToday.sort((a, b) => {
-                    const [h1, m1] = a.startTime.split(':').map(Number);
-                    const [h2, m2] = b.startTime.split(':').map(Number);
-                    return (h1 * 60 + m1) - (h2 * 60 + m2);
-                });
-
-                foundClass = classesToday[0];
-                break;
-            }
+            return new Date(year, month !== -1 ? month : 0, day);
         }
 
-        setNextClass(foundClass);
-    }, [events]);
+        return new Date(dateString); // Fallback
+    };
+
+    // --- Load Activities ---
+    const fetchActivities = async (uid) => {
+        if (!uid) return;
+        setLoadingActivities(true);
+        try {
+            const snap = await getDocs(collection(db, "users", uid, "activities"));
+            const loaded = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+            // Parse date for filtering
+            const withDateObj = loaded.map(item => ({
+                ...item,
+                dateObj: parseCustomDate(item.dateLabel || item.date)
+            }));
+            setActivities(withDateObj);
+        } catch (error) {
+            console.log("Load dashboard activities error:", error);
+        } finally {
+            setLoadingActivities(false);
+        }
+    };
 
     useFocusEffect(
         useCallback(() => {
-            findNextClass();
-        }, [findNextClass])
+            // Context might be slow, use Auth state directly as fallback for reliability
+            const uid = currentUser?.id || auth.currentUser?.uid;
+            if (uid) {
+                fetchActivities(uid);
+            } else {
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    if (user) fetchActivities(user.uid);
+                });
+                return () => unsubscribe();
+            }
+        }, [currentUser?.id])
     );
 
-    const upcomingExams = exams.slice(0, 3);
+    // --- Filter Logic ---
+    let filterStart, filterEnd, filterDays;
+    const now = new Date();
 
-    // สรุปข้อมูล
-    const totalClasses = events.length;
-    const totalExams = exams.length;
+    if (timeFilter === 'today') {
+        filterStart = getStartOfDay(now);
+        filterEnd = getEndOfDay(now);
+        // Map JS day index to our day mapping
+        const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        filterDays = [dayMap[now.getDay()]];
+    } else if (timeFilter === 'week') {
+        filterStart = getStartOfWeek(now);
+        filterEnd = getEndOfWeek(now);
+        filterDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    } else { // month
+        filterStart = getStartOfMonth(now);
+        filterEnd = getEndOfMonth(now);
+        filterDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']; // Events repeat every week
+    }
 
-    return (
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 90 }} showsVerticalScrollIndicator={false}>
+    // Filter Classes
+    const filteredClasses = events.filter(e => filterDays.includes(e.day)).sort((a, b) => {
+        const [h1, m1] = a.startTime.split(':').map(Number);
+        const [h2, m2] = b.startTime.split(':').map(Number);
+        return (h1 * 60 + m1) - (h2 * 60 + m2);
+    });
 
-            {/* --- Next Class Card --- */}
+    // Filter Exams
+    const filteredExams = exams.filter(e => {
+        if (!e.date) return false;
+        const examDate = parseCustomDate(e.date);
+        return examDate >= filterStart && examDate <= filterEnd;
+    }).sort((a, b) => parseCustomDate(a.date) - parseCustomDate(b.date));
+
+    // Filter Activities
+    const filteredActivities = activities.filter(a => {
+        if (!a.dateObj) return false;
+        return a.dateObj >= filterStart && a.dateObj <= filterEnd;
+    }).sort((a, b) => a.dateObj - b.dateObj);
+
+
+    // --- Render Helpers ---
+    const renderFilterTabs = () => (
+        <View style={styles.timeFilterContainer}>
             <TouchableOpacity
-                style={styles.nextClassCard}
-                onPress={() => navigation.navigate('TimeTableScreen')}
-                activeOpacity={0.9}
+                style={[styles.timeFilterBtn, timeFilter === 'today' && styles.timeFilterBtnActive]}
+                onPress={() => setTimeFilter('today')}
             >
-                {/* Decorative circle */}
-                <View style={styles.decorCircle} />
-
-                <View style={styles.nextClassHeader}>
-                    <View style={styles.nextClassBadge}>
-                        <Ionicons name="school" size={16} color="#fff" />
-                    </View>
-                    <Text style={styles.headText}>คลาสเรียนต่อไป</Text>
-                </View>
-
-                {nextClass ? (
-                    <View style={styles.nextClassBody}>
-                        <Text style={styles.subHeadText} numberOfLines={2}>{nextClass.title}</Text>
-                        <View style={styles.nextClassDetails}>
-                            <View style={styles.nextClassInfoRow}>
-                                <Ionicons name="time-outline" size={16} color="#E2E8F0" />
-                                <Text style={styles.infoText}>
-                                    เวลา: {nextClass.startTime} - {nextClass.endTime}
-                                </Text>
-                            </View>
-                            <View style={styles.nextClassInfoRow}>
-                                <Ionicons name="calendar-outline" size={16} color="#E2E8F0" />
-                                <Text style={styles.infoText}>วัน: {nextClass.day}</Text>
-                            </View>
-                            <View style={styles.nextClassInfoRow}>
-                                <Ionicons name="location-outline" size={16} color="#E2E8F0" />
-                                <Text style={styles.infoText}>สถานที่: {nextClass.roomNumber || 'ไม่ระบุห้อง'}</Text>
-                            </View>
-                        </View>
-                    </View>
-                ) : (
-                    <View style={[styles.nextClassBody, { paddingVertical: 10 }]}>
-                        <Text style={[styles.subHeadText, { fontSize: 20, marginBottom: 4 }]}>
-                            ไม่มีคลาสเร็วๆนี้
-                        </Text>
-                        <Text style={styles.infoText}>พักผ่อนให้เต็มที่ หรือทบทวนบทเรียนได้เลย!</Text>
-                    </View>
-                )}
+                <Text style={[styles.timeFilterText, timeFilter === 'today' && styles.timeFilterTextActive]}>วันนี้</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+                style={[styles.timeFilterBtn, timeFilter === 'week' && styles.timeFilterBtnActive]}
+                onPress={() => setTimeFilter('week')}
+            >
+                <Text style={[styles.timeFilterText, timeFilter === 'week' && styles.timeFilterTextActive]}>สัปดาห์นี้</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={[styles.timeFilterBtn, timeFilter === 'month' && styles.timeFilterBtnActive]}
+                onPress={() => setTimeFilter('month')}
+            >
+                <Text style={[styles.timeFilterText, timeFilter === 'month' && styles.timeFilterTextActive]}>เดือนนี้</Text>
+            </TouchableOpacity>
+        </View>
+    );
 
-            {/* --- Quick Add Section --- */}
-            <View style={styles.quickHeader}>
-                <Text style={styles.sectionTitle}>เมนูจัดการด่วน</Text>
+    const renderSummaryCards = () => (
+        <View style={styles.summaryContainer}>
+            <View style={styles.summaryCard}>
+                <View style={[styles.summaryIcon, { backgroundColor: 'rgba(0,102,100,0.1)' }]}>
+                    <Ionicons name="book" size={20} color="#006664" />
+                </View>
+                <View>
+                    <Text style={styles.summaryNumber}>{filteredClasses.length}</Text>
+                    <Text style={styles.summaryLabel}>คลาส</Text>
+                </View>
             </View>
-            <View style={styles.quickRow}>
-                <TouchableOpacity style={styles.quickButton} onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Create' })} activeOpacity={0.8}>
-                    <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(0,102,100,0.1)' }]}>
-                        <Ionicons name="add-circle" size={24} color="#006664" />
-                    </View>
-                    <Text style={styles.quickText}>เพิ่มวิชา</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickButton} activeOpacity={0.8}>
-                    <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(46,134,171,0.1)' }]}>
-                        <Ionicons name="list-circle" size={24} color="#2E86AB" />
-                    </View>
-                    <Text style={styles.quickText}>เพิ่มงาน</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.quickButton} onPress={() => navigation.navigate('TimeTableScreen', { screen: 'CreateExam' })} activeOpacity={0.8}>
-                    <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(162,59,114,0.1)' }]}>
-                        <Ionicons name="information-circle" size={24} color="#A23B72" />
-                    </View>
-                    <Text style={styles.quickText}>เพิ่มสอบ</Text>
-                </TouchableOpacity>
+            <View style={styles.summaryCard}>
+                <View style={[styles.summaryIcon, { backgroundColor: 'rgba(162,59,114,0.1)' }]}>
+                    <Ionicons name="document-text" size={20} color="#A23B72" />
+                </View>
+                <View>
+                    <Text style={styles.summaryNumber}>{filteredExams.length}</Text>
+                    <Text style={styles.summaryLabel}>สอบ</Text>
+                </View>
             </View>
+            <View style={styles.summaryCard}>
+                <View style={[styles.summaryIcon, { backgroundColor: 'rgba(46,134,171,0.1)' }]}>
+                    <Ionicons name="flag" size={20} color="#2E86AB" />
+                </View>
+                <View>
+                    <Text style={styles.summaryNumber}>{filteredActivities.length}</Text>
+                    <Text style={styles.summaryLabel}>กิจกรรม</Text>
+                </View>
+            </View>
+        </View>
+    );
 
-            {/* --- Upcoming Exam Section --- */}
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>สอบที่กำลังจะมาถึง</Text>
-                {upcomingExams.length > 0 && (
-                    <TouchableOpacity onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Exam' })}>
-                        <Text style={styles.seeAllText}>เปิดดูตารางสอบทั้งหมด</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
+    const renderCategoryTabs = () => (
+        <View style={styles.categoryTabs}>
+            <TouchableOpacity
+                style={[styles.categoryTab, activeTab === 'classes' && styles.categoryTabActive]}
+                onPress={() => setActiveTab('classes')}
+            >
+                <Ionicons name="school" size={18} color={activeTab === 'classes' ? '#006664' : '#888'} />
+                <Text style={[styles.categoryTabText, activeTab === 'classes' && styles.categoryTabTextActive]}>เรียน</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={[styles.categoryTab, activeTab === 'exams' && styles.categoryTabActive]}
+                onPress={() => setActiveTab('exams')}
+            >
+                <Ionicons name="create" size={18} color={activeTab === 'exams' ? '#006664' : '#888'} />
+                <Text style={[styles.categoryTabText, activeTab === 'exams' && styles.categoryTabTextActive]}>สอบ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={[styles.categoryTab, activeTab === 'activities' && styles.categoryTabActive]}
+                onPress={() => setActiveTab('activities')}
+            >
+                <Ionicons name="bicycle" size={18} color={activeTab === 'activities' ? '#006664' : '#888'} />
+                <Text style={[styles.categoryTabText, activeTab === 'activities' && styles.categoryTabTextActive]}>กิจกรรม</Text>
+            </TouchableOpacity>
+        </View>
+    );
 
-            {upcomingExams.length > 0 ? (
-                upcomingExams.map((exam, index) => {
-                    const colors = ['#FF8A8A', '#35CDBE', '#FFB347'];
-                    return (
-                        <TouchableOpacity
-                            key={exam.id}
-                            style={styles.examCard}
-                            onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Exam' })}
-                            activeOpacity={0.85}
-                        >
-                            <View style={[styles.examAccent, { backgroundColor: colors[index % colors.length] }]} />
-                            <View style={styles.examContent}>
-                                <Text style={styles.examTitle}>{exam.title}</Text>
-                                <View style={styles.examMeta}>
-                                    <View style={styles.examInfoRow}>
-                                        <Ionicons name="calendar-outline" size={14} color="#777" />
-                                        <Text style={styles.examDetail}>{exam.date}</Text>
+    const renderEmptyState = (icon, title, subtitle, routeStr, params) => (
+        <View style={styles.emptyState}>
+            <View style={styles.emptyIconCircle}>
+                <Ionicons name={icon} size={40} color="#006664" />
+            </View>
+            <Text style={styles.emptyTitle}>{title}</Text>
+            <Text style={styles.emptySubtitle}>{subtitle}</Text>
+            <TouchableOpacity
+                style={styles.emptyActionBtn}
+                onPress={() => navigation.navigate(routeStr, params)}
+            >
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.emptyActionText}>เพิ่มข้อมูลเลย</Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    const renderContent = () => {
+        if (activeTab === 'classes') {
+            if (filteredClasses.length === 0) return renderEmptyState('cafe', 'ว่างเปล่าสุดๆ!', `ไม่มีวิชาเรียนในช่วงเวลา${timeFilter === 'today' ? 'ของวันนี้' : timeFilter === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'}เลย`, 'TimeTableScreen', { screen: 'Create' });
+            return (
+                <View style={styles.listContainer}>
+                    {filteredClasses.map((item, index) => (
+                        <TouchableOpacity key={item.id} style={styles.listItemCard} onPress={() => navigation.navigate('TimeTableScreen')} activeOpacity={0.8}>
+                            <View style={[styles.listItemAccent, { backgroundColor: '#006664' }]} />
+                            <View style={styles.listItemContent}>
+                                <Text style={styles.listItemTitle}>{item.title}</Text>
+                                <View style={styles.listItemMeta}>
+                                    <View style={styles.metaBadge}>
+                                        <Ionicons name="time" size={12} color="#006664" />
+                                        <Text style={styles.metaText}>{item.startTime} - {item.endTime}</Text>
                                     </View>
-                                    <View style={styles.examInfoRow}>
-                                        <Ionicons name="time-outline" size={14} color="#777" />
-                                        <Text style={styles.examDetail}>{exam.startTime} - {exam.endTime}</Text>
+                                    <View style={styles.metaBadge}>
+                                        <Ionicons name="calendar" size={12} color="#006664" />
+                                        <Text style={styles.metaText}>{item.day}</Text>
                                     </View>
                                 </View>
                             </View>
-                            <View style={styles.examRoomBadge}>
-                                <Ionicons name="location" size={12} color="#fff" />
-                                <Text style={styles.examRoomText}>{exam.roomNumber || 'No Room'}</Text>
+                            <View style={styles.roomPill}>
+                                <Ionicons name="location" size={10} color="#fff" />
+                                <Text style={styles.roomPillText}>{item.roomNumber || 'N/A'}</Text>
                             </View>
                         </TouchableOpacity>
-                    );
-                })
-            ) : (
-                <View style={styles.emptyExamCard}>
-                    <Ionicons name="document-text-outline" size={40} color="#ddd" />
-                    <Text style={styles.emptyExamText}>ยังไม่มีวิชาสอบในตอนนี้</Text>
-                    <TouchableOpacity
-                        style={styles.emptyAddBtn}
-                        onPress={() => navigation.navigate('TimeTableScreen', { screen: 'CreateExam' })}
-                    >
-                        <Ionicons name="add" size={16} color="#fff" style={{ marginRight: 4 }} />
-                        <Text style={styles.emptyAddText}>บันทึกตารางสอบเลย</Text>
-                    </TouchableOpacity>
+                    ))}
                 </View>
-            )}
-        </ScrollView>
+            );
+        }
+
+        if (activeTab === 'exams') {
+            if (filteredExams.length === 0) return renderEmptyState('document', 'ไม่มีตารางสอบ', `เย่! คุณยังไม่ต้องสอบในช่วงเวลา${timeFilter === 'today' ? 'วันนี้' : timeFilter === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'}`, 'TimeTableScreen', { screen: 'CreateExam' });
+            return (
+                <View style={styles.listContainer}>
+                    {filteredExams.map((exam, index) => (
+                        <TouchableOpacity key={exam.id} style={styles.listItemCard} onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Exam' })} activeOpacity={0.8}>
+                            <View style={[styles.listItemAccent, { backgroundColor: '#A23B72' }]} />
+                            <View style={styles.listItemContent}>
+                                <Text style={styles.listItemTitle}>{exam.title}</Text>
+                                <View style={styles.listItemMeta}>
+                                    <View style={styles.metaBadgeError}>
+                                        <Ionicons name="calendar" size={12} color="#A23B72" />
+                                        <Text style={styles.metaTextError}>{exam.date}</Text>
+                                    </View>
+                                    <View style={styles.metaBadgeError}>
+                                        <Ionicons name="time" size={12} color="#A23B72" />
+                                        <Text style={styles.metaTextError}>{exam.startTime} - {exam.endTime}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                            <View style={[styles.roomPill, { backgroundColor: '#A23B72' }]}>
+                                <Ionicons name="location" size={10} color="#fff" />
+                                <Text style={styles.roomPillText}>{exam.roomNumber || 'N/A'}</Text>
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            );
+        }
+
+        if (activeTab === 'activities') {
+            if (loadingActivities) return <ActivityIndicator size="large" color="#006664" style={{ marginTop: 40 }} />;
+            if (filteredActivities.length === 0) return renderEmptyState('leaf', 'เวลาว่างเยอะเลย', `ไม่มีกิจกรรมที่วางแผนไว้ในช่วงเวลา${timeFilter === 'today' ? 'วันนี้' : timeFilter === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'}`, 'ActivityScreen');
+            return (
+                <View style={styles.listContainer}>
+                    {filteredActivities.map((act, index) => (
+                        <TouchableOpacity key={act.id} style={styles.listItemCard} onPress={() => navigation.navigate('ActivityScreen')} activeOpacity={0.8}>
+                            <View style={[styles.listItemAccent, { backgroundColor: act.completed ? '#10B981' : '#2E86AB' }]} />
+                            <View style={styles.listItemContent}>
+                                <Text style={[styles.listItemTitle, act.completed && { textDecorationLine: 'line-through', color: '#999' }]}>
+                                    {act.title}
+                                </Text>
+                                <View style={styles.listItemMeta}>
+                                    <View style={styles.metaBadgeBlue}>
+                                        <Ionicons name="calendar-outline" size={12} color="#2E86AB" />
+                                        <Text style={styles.metaTextBlue}>{(act.dateLabel || act.date || '')} {act.time || ''}</Text>
+                                    </View>
+                                    {act.location ? (
+                                        <View style={styles.metaBadgeBlue}>
+                                            <Ionicons name="location-outline" size={12} color="#2E86AB" />
+                                            <Text style={styles.metaTextBlue}>{act.location}</Text>
+                                        </View>
+                                    ) : null}
+                                </View>
+                            </View>
+                            {act.completed && (
+                                <View style={styles.checkCircle}>
+                                    <Ionicons name="checkmark" size={14} color="#fff" />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            );
+        }
+    };
+
+    return (
+        <View style={styles.safeArea}>
+            <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+
+                {/* 1. Time Filters */}
+                {renderFilterTabs()}
+
+                {/* 2. Summary Cards */}
+                {renderSummaryCards()}
+
+                {/* 3. Category Tabs */}
+                {renderCategoryTabs()}
+
+                {/* 4. List Content */}
+                <View style={styles.contentWrap}>
+                    {renderContent()}
+                </View>
+
+            </ScrollView>
+
+            {/* Floating Quick Action Button */}
+            <TouchableOpacity
+                style={styles.fab}
+                onPress={() => setIsFabMenuVisible(true)}
+                activeOpacity={0.9}
+            >
+                <Ionicons name="add" size={28} color="#c3eb32" />
+            </TouchableOpacity>
+
+            {/* FAB Options Modal */}
+            <Modal
+                transparent={true}
+                visible={isFabMenuVisible}
+                animationType="fade"
+                onRequestClose={() => setIsFabMenuVisible(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setIsFabMenuVisible(false)}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={styles.fabMenuContainer}>
+                                <TouchableOpacity
+                                    style={styles.fabMenuItem}
+                                    onPress={() => {
+                                        setIsFabMenuVisible(false);
+                                        navigation.navigate('TimeTableScreen', { screen: 'Create' });
+                                    }}
+                                >
+                                    <View style={[styles.fabMenuIconWrap, { backgroundColor: 'rgba(0,102,100,0.1)' }]}>
+                                        <Ionicons name="school" size={20} color="#006664" />
+                                    </View>
+                                    <Text style={styles.fabMenuText}>เพิ่มวิชาเรียน</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.fabMenuItem}
+                                    onPress={() => {
+                                        setIsFabMenuVisible(false);
+                                        navigation.navigate('TimeTableScreen', { screen: 'CreateExam' });
+                                    }}
+                                >
+                                    <View style={[styles.fabMenuIconWrap, { backgroundColor: 'rgba(162,59,114,0.1)' }]}>
+                                        <Ionicons name="create" size={20} color="#A23B72" />
+                                    </View>
+                                    <Text style={styles.fabMenuText}>เพิ่มวิชาสอบ</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.fabMenuItem}
+                                    onPress={() => {
+                                        setIsFabMenuVisible(false);
+                                        navigation.navigate('ActivityScreen');
+                                    }}
+                                >
+                                    <View style={[styles.fabMenuIconWrap, { backgroundColor: 'rgba(46,134,171,0.1)' }]}>
+                                        <Ionicons name="bicycle" size={20} color="#2E86AB" />
+                                    </View>
+                                    <Text style={styles.fabMenuText}>เพิ่มกิจกรรม</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#f6f9f8',
+    },
     container: {
         flex: 1,
-        backgroundColor: '#f8faf9',
-        paddingTop: 10,
+        paddingTop: 15,
         paddingHorizontal: 20,
     },
 
-    /* Stats Row */
-    statsRow: {
+    /* 1. Time Filters */
+    timeFilterContainer: {
         flexDirection: 'row',
-        gap: 12,
+        backgroundColor: '#e6edea',
+        borderRadius: 12,
+        padding: 4,
         marginBottom: 20,
     },
-    statCard: {
+    timeFilterBtn: {
         flex: 1,
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
+        paddingVertical: 10,
         alignItems: 'center',
+        borderRadius: 8,
+    },
+    timeFilterBtnActive: {
+        backgroundColor: '#fff',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
-        shadowRadius: 6,
-        elevation: 3,
+        shadowRadius: 3,
+        elevation: 2,
     },
-    statIcon: {
-        width: 44,
-        height: 44,
+    timeFilterText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#666',
+    },
+    timeFilterTextActive: {
+        color: '#006664',
+        fontWeight: 'bold',
+    },
+
+    /* 2. Summary Cards */
+    summaryContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 24,
+        gap: 12,
+    },
+    summaryCard: {
+        flex: 1,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+        elevation: 2,
+    },
+    summaryIcon: {
+        width: 40,
+        height: 40,
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
     },
-    statNumber: {
-        fontSize: 24,
+    summaryNumber: {
+        fontSize: 18,
         fontWeight: 'bold',
-        color: '#1a3a3a',
+        color: '#2d3748',
     },
-    statLabel: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: '#666',
-        marginTop: 4,
+    summaryLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#718096',
+        marginTop: 2,
     },
 
-    /* Section */
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#333',
-    },
-    sectionHeader: {
+    /* 3. Category Tabs */
+    categoryTabs: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 24,
-        marginBottom: 14,
-    },
-    seeAllText: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#006664',
-        textDecorationLine: 'underline',
-    },
-
-    /* Next Class Card */
-    nextClassCard: {
-        backgroundColor: '#006664',
-        borderRadius: 20,
-        padding: 24,
-        width: '100%',
-        shadowColor: '#006664',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
-        elevation: 8,
-        minHeight: 180,
-        overflow: 'hidden',
-    },
-    decorCircle: {
-        position: 'absolute',
-        top: -40,
-        right: -40,
-        width: 140,
-        height: 140,
-        borderRadius: 70,
-        backgroundColor: 'rgba(255,255,255,0.08)',
-    },
-    nextClassHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
         marginBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
     },
-    nextClassBadge: {
-        width: 34,
-        height: 34,
-        borderRadius: 10,
-        backgroundColor: 'rgba(255,255,255,0.25)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    nextClassBody: {
-        gap: 8,
-    },
-    nextClassDetails: {
-        marginTop: 8,
-        gap: 8,
-    },
-    nextClassInfoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-    },
-    headText: {
-        color: 'rgba(255,255,255,0.85)',
-        fontSize: 15,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-    },
-    subHeadText: {
-        color: 'white',
-        fontSize: 26,
-        fontWeight: 'bold',
-    },
-    infoText: {
-        color: 'rgba(255,255,255,0.9)',
-        fontSize: 15,
-        fontWeight: '500',
-    },
-
-    /* Quick Add */
-    quickHeader: {
-        marginTop: 24,
-        marginBottom: 14,
-    },
-    quickRow: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    quickButton: {
+    categoryTab: {
         flex: 1,
-        backgroundColor: '#fff',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 16,
-        paddingVertical: 18,
-        gap: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-        elevation: 3,
-    },
-    quickIconWrap: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    quickText: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#444',
-    },
-
-    /* Exam Cards */
-    examCard: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        gap: 8,
+        borderBottomWidth: 3,
+        borderBottomColor: 'transparent',
+    },
+    categoryTabActive: {
+        borderBottomColor: '#006664',
+    },
+    categoryTabText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#888',
+    },
+    categoryTabTextActive: {
+        color: '#006664',
+        fontWeight: 'bold',
+    },
+
+    /* 4. List Content */
+    contentWrap: {
+        flex: 1,
+        minHeight: 300,
+    },
+    listContainer: {
+        gap: 12,
+        paddingTop: 8,
+    },
+    listItemCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        marginBottom: 12,
-        paddingVertical: 18,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
         paddingRight: 16,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 6,
-        elevation: 3,
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        elevation: 2,
         overflow: 'hidden',
     },
-    examAccent: {
+    listItemAccent: {
         width: 6,
         height: '100%',
-        marginRight: 16,
+        marginRight: 14,
     },
-    examContent: {
+    listItemContent: {
         flex: 1,
     },
-    examTitle: {
-        fontSize: 17,
+    listItemTitle: {
+        fontSize: 16,
         fontWeight: 'bold',
         color: '#2D3748',
         marginBottom: 6,
     },
-    examMeta: {
+    listItemMeta: {
         flexDirection: 'row',
-        gap: 16,
+        flexWrap: 'wrap',
+        gap: 8,
     },
-    examInfoRow: {
+    metaBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        backgroundColor: 'rgba(0,102,100,0.08)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        gap: 4,
     },
-    examDetail: {
-        fontSize: 13,
+    metaText: {
+        fontSize: 12,
         fontWeight: '600',
-        color: '#666',
+        color: '#006664',
     },
-    examRoomBadge: {
+    metaBadgeError: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(162,59,114,0.08)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        gap: 4,
+    },
+    metaTextError: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#A23B72',
+    },
+    metaBadgeBlue: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(46,134,171,0.08)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        gap: 4,
+    },
+    metaTextBlue: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#2E86AB',
+    },
+    roomPill: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#4A5568',
@@ -421,44 +638,127 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         gap: 4,
     },
-    examRoomText: {
+    roomPillText: {
         color: '#fff',
-        fontSize: 12,
-        fontWeight: '700',
+        fontSize: 11,
+        fontWeight: 'bold',
     },
-
-    /* Empty Exam */
-    emptyExamCard: {
-        width: '100%',
-        borderWidth: 2,
-        borderColor: '#e2e8f0',
-        borderStyle: 'dashed',
-        borderRadius: 18,
+    checkCircle: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: '#10B981',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f8fafc',
-        paddingVertical: 36,
-        gap: 12,
+        marginLeft: 10,
     },
-    emptyExamText: {
-        color: '#94a3b8',
-        fontSize: 16,
-        fontWeight: '600',
+
+    /* Empty State */
+    emptyState: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 60,
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#e8ebe8',
+        borderStyle: 'dashed',
+        marginTop: 10,
     },
-    emptyAddBtn: {
-        marginTop: 6,
+    emptyIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: 'rgba(0,102,100,0.05)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    emptyTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#2D3748',
+        marginBottom: 6,
+    },
+    emptySubtitle: {
+        fontSize: 14,
+        color: '#718096',
+        textAlign: 'center',
+        marginBottom: 24,
+        paddingHorizontal: 30,
+    },
+    emptyActionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
         backgroundColor: '#006664',
         paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 10,
-        flexDirection: 'row',
-        alignItems: 'center'
+        paddingVertical: 12,
+        borderRadius: 12,
+        gap: 8,
     },
-    emptyAddText: {
+    emptyActionText: {
         color: '#fff',
         fontSize: 14,
         fontWeight: 'bold',
     },
+
+    /* FAB */
+    fab: {
+        position: 'absolute',
+        bottom: 110,
+        right: 20,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#006664',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#006664',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+
+    /* FAB Menu Modal */
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'flex-end',
+        alignItems: 'flex-end',
+    },
+    fabMenuContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 10,
+        marginRight: 20,
+        marginBottom: 180, // Positions it above the FAB
+        width: 200,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+        elevation: 6,
+    },
+    fabMenuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 10,
+        gap: 12,
+    },
+    fabMenuIconWrap: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fabMenuText: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        color: '#333',
+    }
 });
 
 export default DashBoardScreen;

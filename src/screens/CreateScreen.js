@@ -12,11 +12,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { EventContext } from "../context/eventContext";
+import { UserContext } from "../context/userContext";
 import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
 const CreateScreen = ({ navigation }) => {
   const { events, dispatch } = useContext(EventContext);
+  const { currentUser } = useContext(UserContext);
 
   const [form, setForm] = useState({
     title: "",
@@ -43,7 +47,7 @@ const CreateScreen = ({ navigation }) => {
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.title || !form.startTime || !form.endTime) {
       Alert.alert("แจ้งเตือน", "กรุณากรอกชื่อวิชาและเวลาให้ครบถ้วน");
       return;
@@ -78,7 +82,34 @@ const CreateScreen = ({ navigation }) => {
       return;
     }
 
-    dispatch({ type: "ADD_OR_UPDATE", payload: form });
+    // Save to Firestore FIRST, then dispatch to context
+    const eventData = {
+      title: form.title,
+      day: form.day,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      roomNumber: form.roomNumber || "",
+    };
+
+    let firestoreId = null;
+    if (!currentUser?.id) {
+      Alert.alert('ข้อผิดพลาด', 'ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่');
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, "users", currentUser.id, "events"), eventData);
+      firestoreId = docRef.id;
+    } catch (error) {
+      console.log("Save event error full stack:", error);
+      Alert.alert('ข้อผิดพลาดจาก Firestore', `สาเหตุ: ${error.message} (Code: ${error.code})`);
+      return; // Stop here if Firestore fails!
+    }
+
+    dispatch({
+      type: "ADD_OR_UPDATE",
+      payload: { ...eventData, firestoreId, id: firestoreId }
+    });
     navigation.goBack();
   };
 

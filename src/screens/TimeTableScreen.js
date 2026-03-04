@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { EventContext } from "../context/eventContext";
 import { ExamContext } from "../context/examContext";
+import { UserContext } from "../context/userContext";
 import { Ionicons } from '@expo/vector-icons';
 
 const CARD_COLORS = [
@@ -24,6 +25,7 @@ const END_HOUR = 21;
 const TimeTableScreen = ({ navigation }) => {
     const { events, dispatch: eventDispatch } = useContext(EventContext);
     const { dispatch: examDispatch } = useContext(ExamContext);
+    const { currentUser } = useContext(UserContext);
     const [selectedDay, setSelectedDay] = useState('M');
 
     // Share Schedule States
@@ -50,7 +52,7 @@ const TimeTableScreen = ({ navigation }) => {
                     if (!isOverlap) {
                         eventDispatch({
                             type: 'ADD_OR_UPDATE',
-                            payload: { title: e.t, day: e.d, startTime: e.s, endTime: e.e, roomNumber: e.r }
+                            payload: { title: e.t, day: e.d, startTime: e.s, endTime: e.e, roomNumber: e.r, userId: currentUser?.id }
                         });
                         added++;
                     }
@@ -102,8 +104,8 @@ const TimeTableScreen = ({ navigation }) => {
                     text: "ลบข้อมูล",
                     style: "destructive",
                     onPress: () => {
-                        eventDispatch({ type: 'DELETE_EVENT', payload: item.title });
-                        examDispatch({ type: 'DELETE_EXAM', payload: item.title });
+                        eventDispatch({ type: 'DELETE_EVENT', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
+                        examDispatch({ type: 'DELETE_EXAM', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
                     }
                 }
             ]

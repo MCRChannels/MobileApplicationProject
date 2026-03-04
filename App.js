@@ -11,6 +11,7 @@ import DashboardScreen from "./src/screens/DashBoardScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import TimeTableScreen from "./src/screens/TimeTableScreen";
 import Register from "./src/screens/Register";
+import LoginScreen from "./src/screens/LoginScreen";
 import { UserProvider } from "./src/context/userContext";
 import CreateScreen from "./src/screens/CreateScreen";
 import { TaskProvider } from "./src/context/TaskContext";
@@ -100,7 +101,12 @@ export default function App() {
           <EventProvider>
             <ExamProvider>
               <NavigationContainer>
-                <Stack.Navigator initialRouteName="Register" screenOptions={{ headerTintColor: '#fff', headerStyle: { backgroundColor: '#006664', borderBottomRightRadius: 20, borderBottomLeftRadius: 20, position: 'absolute', height: 100 } }}>
+                <Stack.Navigator initialRouteName="Login" screenOptions={{ headerTintColor: '#fff', headerStyle: { backgroundColor: '#006664', borderBottomRightRadius: 20, borderBottomLeftRadius: 20, position: 'absolute', height: 100 } }}>
+                  <Stack.Screen
+                    name="Login"
+                    component={LoginScreen}
+                    options={{ headerShown: false }}
+                  />
                   <Stack.Screen
                     name="Register"
                     component={Register}

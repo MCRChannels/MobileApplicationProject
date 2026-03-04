@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { EventContext } from "../context/eventContext";
 import { ExamContext } from "../context/examContext";
+import { UserContext } from "../context/userContext";
 import { Ionicons } from '@expo/vector-icons';
 
 const CARD_COLORS = [
@@ -18,6 +19,7 @@ const CARD_COLORS = [
 const ExamScreen = ({ navigation }) => {
     const { exams, dispatch: examDispatch } = useContext(ExamContext);
     const { events, dispatch: eventDispatch } = useContext(EventContext);
+    const { currentUser } = useContext(UserContext);
 
     // เรียงวันที่จากใกล้ไปไกล
     const sortedExams = [...exams].sort((a, b) => {
@@ -32,7 +34,7 @@ const ExamScreen = ({ navigation }) => {
     });
 
     const handleDelete = (item) => {
-        const hasMatchingClass = events.some(e => e.title.toLowerCase() === item.title.toLowerCase());
+        const hasMatchingClass = events.some(e => e.title?.toLowerCase() === item.title?.toLowerCase());
 
         if (hasMatchingClass) {
             Alert.alert(
@@ -43,15 +45,15 @@ const ExamScreen = ({ navigation }) => {
                     {
                         text: "ลบแค่สอบ",
                         onPress: () => {
-                            examDispatch({ type: 'DELETE_EXAM', payload: item.title });
+                            examDispatch({ type: 'DELETE_EXAM', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
                         }
                     },
                     {
                         text: "ลบทั้งคู่",
                         style: "destructive",
                         onPress: () => {
-                            examDispatch({ type: 'DELETE_EXAM', payload: item.title });
-                            eventDispatch({ type: 'DELETE_EVENT', payload: item.title });
+                            examDispatch({ type: 'DELETE_EXAM', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
+                            eventDispatch({ type: 'DELETE_EVENT', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
                         }
                     }
                 ]
@@ -66,7 +68,7 @@ const ExamScreen = ({ navigation }) => {
                         text: "ลบข้อมูล",
                         style: "destructive",
                         onPress: () => {
-                            examDispatch({ type: 'DELETE_EXAM', payload: item.title });
+                            examDispatch({ type: 'DELETE_EXAM', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
                         }
                     }
                 ]

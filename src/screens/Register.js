@@ -9,18 +9,23 @@ import {
     TextInput,
     KeyboardAvoidingView,
     ScrollView,
-    Platform
+    Platform,
+    ActivityIndicator
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { UserContext } from "../context/userContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "../firebaseConfig";
 
 const Register = ({ navigation }) => {
-    const { users, dispatch } = useContext(UserContext);
+    const { dispatch } = useContext(UserContext);
 
     const [form, setForm] = useState({
         fullname: '',
+        email: '',
         username: '',
         password: '',
         confirmPassword: '',
@@ -31,11 +36,12 @@ const Register = ({ navigation }) => {
 
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    const handleRegister = () => {
-        const { fullname, username, password, confirmPassword } = form;
+    const handleRegister = async () => {
+        const { fullname, email, username, password, confirmPassword } = form;
 
-        if (!fullname || !username || !password || !confirmPassword) {
+        if (!fullname || !email || !username || !password || !confirmPassword) {
             Alert.alert('แจ้งเตือน', 'กรุณากรอกข้อมูลให้ครบทุกช่องครับ');
             return;
         }
@@ -50,36 +56,54 @@ const Register = ({ navigation }) => {
             return;
         }
 
-        const isDuplicate = users.find(user => user.username.toLowerCase() === username.toLowerCase());
+        setLoading(true);
+        try {
+            // Create user in Firebase Auth
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const uid = userCredential.user.uid;
 
-        if (isDuplicate) {
-            Alert.alert('แจ้งเตือน', 'ชื่อผู้ใช้งานนี้มีในระบบแล้ว กรุณาใช้ชื่ออื่นครับ');
-            return;
-        }
+            // Save user profile to Firestore
+            const userData = {
+                fullname: fullname,
+                email: email,
+                username: username,
+                Dept: form.Dept,
+                year: form.year,
+                image: form.image,
+                createdAt: new Date().toISOString(),
+            };
 
-        const newUser = {
-            id: Date.now().toString(),
-            fullname: fullname,
-            username: username,
-            password: password,
-            confirmPassword: confirmPassword,
-            Dept: form.Dept,
-            year: form.year,
-            image: form.image,
-        };
+            await setDoc(doc(db, "users", uid), userData);
 
-        dispatch({ type: 'ADDED', payload: newUser });
+            const newUser = {
+                id: uid,
+                ...userData,
+            };
 
-        Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อยแล้ว!',
-            [{
-                text: 'ตกลง',
-                onPress: () => navigation.navigate('HomeApp',
-                    {
-                        screen: 'ProfileScreen',
-                        params: { user: newUser }
+            dispatch({ type: 'SET_CURRENT_USER', payload: newUser });
+
+            Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อยแล้ว!',
+                [{
+                    text: 'ตกลง',
+                    onPress: () => navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'HomeApp', params: { screen: 'ProfileScreen', params: { user: newUser } } }],
                     })
-            }]
-        );
+                }]
+            );
+        } catch (error) {
+            let errorMessage = 'เกิดข้อผิดพลาดในการสมัครสมาชิก';
+            if (error.code === 'auth/email-already-in-use') {
+                errorMessage = 'Email นี้ถูกใช้งานไปแล้วครับ กรุณาใช้ Email อื่น';
+            } else if (error.code === 'auth/invalid-email') {
+                errorMessage = 'รูปแบบ Email ไม่ถูกต้องครับ';
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = 'รหัสผ่านไม่ปลอดภัยพอครับ กรุณาตั้งรหัสผ่านที่ยาวกว่านี้';
+            }
+            Alert.alert('สมัครสมาชิกไม่สำเร็จ', errorMessage);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleInput = (key, value) => {
@@ -118,6 +142,20 @@ const Register = ({ navigation }) => {
                                 placeholderTextColor="#999"
                                 value={form.fullname}
                                 onChangeText={(text) => handleInput('fullname', text)}
+                            />
+                        </View>
+
+                        {/* Email */}
+                        <View style={styles.inputWrapper}>
+                            <Ionicons name="mail-outline" size={20} color="#006664" style={styles.inputIcon} />
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Email"
+                                placeholderTextColor="#999"
+                                value={form.email}
+                                onChangeText={(text) => handleInput('email', text)}
+                                autoCapitalize="none"
+                                keyboardType="email-address"
                             />
                         </View>
 
@@ -209,17 +247,30 @@ const Register = ({ navigation }) => {
                         </View>
 
                         {/* Register Button */}
-                        <TouchableOpacity style={styles.registerButton} onPress={handleRegister} activeOpacity={0.85}>
-                            <Text style={styles.buttonText}>Register</Text>
-                            <Ionicons name="arrow-forward-outline" size={20} color="#c3eb32" style={{ marginLeft: 8 }} />
+                        <TouchableOpacity
+                            style={[styles.registerButton, loading && styles.registerButtonDisabled]}
+                            onPress={handleRegister}
+                            activeOpacity={0.85}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="#c3eb32" size="small" />
+                            ) : (
+                                <>
+                                    <Text style={styles.buttonText}>Register</Text>
+                                    <Ionicons name="arrow-forward-outline" size={20} color="#c3eb32" style={{ marginLeft: 8 }} />
+                                </>
+                            )}
                         </TouchableOpacity>
 
-                        {/* Debug bypass button */}
+                        {/* Login Link */}
                         <TouchableOpacity
-                            style={styles.skipButton}
-                            onPress={() => navigation.navigate('HomeApp', { screen: 'ProfileScreen', params: { user: form } })}
+                            style={styles.loginLink}
+                            onPress={() => navigation.navigate('Login')}
                         >
-                            <Text style={styles.skipButtonText}>Skip for Testing</Text>
+                            <Text style={styles.loginLinkText}>
+                                มีบัญชีแล้ว? <Text style={styles.loginLinkBold}>เข้าสู่ระบบ</Text>
+                            </Text>
                         </TouchableOpacity>
 
                     </View>
@@ -343,6 +394,9 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
         elevation: 6,
     },
+    registerButtonDisabled: {
+        opacity: 0.7,
+    },
     buttonText: {
         color: '#c3eb32',
         fontSize: 16,
@@ -350,16 +404,19 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
 
-    /* Skip Testing Button */
-    skipButton: {
+    /* Login Link */
+    loginLink: {
         marginTop: 20,
         padding: 10,
         alignItems: 'center',
     },
-    skipButtonText: {
-        color: '#999',
-        fontSize: 13,
-        textDecorationLine: 'underline',
+    loginLinkText: {
+        color: '#666',
+        fontSize: 14,
+    },
+    loginLinkBold: {
+        color: '#006664',
+        fontWeight: 'bold',
     },
 });
 

@@ -1,82 +1,151 @@
 import React, { useState, useContext } from "react";
-import { Text, View, StyleSheet, Image, TouchableOpacity, Alert, TextInput, ScrollView } from 'react-native'
+import { Text, View, StyleSheet, Image, TouchableOpacity, Alert, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { UserContext } from "../context/userContext";
 import { Picker } from "@react-native-picker/picker";
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-
+import { signOut, deleteUser } from "firebase/auth";
+import { doc, deleteDoc, collection, getDocs } from "firebase/firestore";
+import { auth, db } from "../firebaseConfig";
+import { EventContext } from "../context/eventContext";
+import { ExamContext } from "../context/examContext";
+import { TaskContext } from "../context/TaskContext";
+import { uploadImageToCloudinary } from "../cloudinaryConfig";
 
 const ProfileScreen = ({ route, navigation }) => {
-    const user = route.params?.user || {}
-    const { dispatch } = useContext(UserContext)
+    const user = route.params?.user || {};
+    const { dispatch: userDispatch } = useContext(UserContext);
+    const { dispatch: eventDispatch } = useContext(EventContext);
+    const { dispatch: examDispatch } = useContext(ExamContext);
+    const { dispatch: taskDispatch } = useContext(TaskContext);
 
-    const [editUser, setEditUser] = useState(user)
+    const [editUser, setEditUser] = useState(user);
+    const [uploading, setUploading] = useState(false);
 
     const handleEditUser = (key, value) => {
-        setEditUser({ ...editUser, [key]: value })
-    }
+        setEditUser({ ...editUser, [key]: value });
+    };
 
     const handleSave = () => {
-        Alert.alert('Notification', 'บันทึกข้อมูลสำเร็จ')
-
-        dispatch({
+        userDispatch({
             type: 'UPDATE_USER',
             payload: editUser
-        })
-    }
+        });
+        Alert.alert('Notification', 'บันทึกข้อมูลสำเร็จ');
+    };
 
     const handleDelete = () => {
-        Alert.alert('Notification', 'มึงแน่ใจใช่ไหมที่จะลบข้อมูลนี้?', [
+        Alert.alert('Notification', 'คุณแน่ใจที่จะลบบัญชีนี้หรือไม่?', [
             { text: 'ยกเลิก', style: 'cancel' },
             {
                 text: 'ลบข้อมูล',
                 style: 'destructive',
-                onPress: () => {
-                    dispatch({ type: 'DELETE_USER', payload: user.id })
-                    navigation.navigate('Register')
+                onPress: async () => {
+                    try {
+                        const uid = user.id;
+                        // Delete subcollections
+                        const subcollections = ['events', 'exams', 'tasks', 'activities'];
+                        for (const sub of subcollections) {
+                            const snap = await getDocs(collection(db, "users", uid, sub));
+                            for (const d of snap.docs) {
+                                await deleteDoc(doc(db, "users", uid, sub, d.id));
+                            }
+                        }
+                        // Delete user doc
+                        await deleteDoc(doc(db, "users", uid));
+                        // Delete Firebase Auth user
+                        if (auth.currentUser) {
+                            await deleteUser(auth.currentUser);
+                        }
+                        // Clear contexts
+                        userDispatch({ type: 'LOGOUT' });
+                        eventDispatch({ type: 'CLEAR_ALL' });
+                        examDispatch({ type: 'CLEAR_ALL' });
+                        taskDispatch({ type: 'CLEAR_ALL' });
+
+                        navigation.reset({
+                            index: 0,
+                            routes: [{ name: 'Login' }],
+                        });
+                    } catch (error) {
+                        console.log("Delete account error:", error);
+                        Alert.alert('ผิดพลาด', 'ไม่สามารถลบบัญชีได้ กรุณาลองใหม่อีกครั้ง');
+                    }
                 }
             }
-        ])
-    }
+        ]);
+    };
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            userDispatch({ type: 'LOGOUT' });
+            eventDispatch({ type: 'CLEAR_ALL' });
+            examDispatch({ type: 'CLEAR_ALL' });
+            taskDispatch({ type: 'CLEAR_ALL' });
+            navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+            });
+        } catch (error) {
+            console.log("Logout error:", error);
+        }
+    };
 
     const PickImage = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
         if (status !== 'granted') {
-            Alert.alert('Notifications', 'ไม่สามารถเข้าถึงคลังภาพได้')
-            return
+            Alert.alert('Notifications', 'ไม่สามารถเข้าถึงคลังภาพได้');
+            return;
         }
 
         let result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images', 'livePhotos'],
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 1
-        })
+            quality: 0.8
+        });
 
         if (!result.canceled) {
-            setEditUser({ ...editUser, image: result.assets[0].uri })
+            const localUri = result.assets[0].uri;
+            setUploading(true);
+            try {
+                const cloudinaryUrl = await uploadImageToCloudinary(localUri);
+                setEditUser({ ...editUser, image: cloudinaryUrl });
+                Alert.alert('สำเร็จ', 'อัปโหลดรูปภาพเรียบร้อยแล้ว');
+            } catch (error) {
+                console.log('Cloudinary upload error:', error);
+                Alert.alert('ผิดพลาด', 'ไม่สามารถอัปโหลดรูปภาพได้ กรุณาลองใหม่');
+                setEditUser({ ...editUser, image: localUri });
+            } finally {
+                setUploading(false);
+            }
         }
-
-    }
+    };
 
     return (
         <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
             {/* Profile Image Section */}
             <View style={[styles.avatarSection, { marginTop: 20 }]}>
-                <TouchableOpacity onPress={PickImage} style={styles.avatarWrapper}>
+                <TouchableOpacity onPress={PickImage} style={styles.avatarWrapper} disabled={uploading}>
                     {editUser.image ? (
                         <Image source={{ uri: editUser.image }} style={styles.avatarImage} />
                     ) : (
                         <Image source={{ uri: 'https://www.pngall.com/wp-content/uploads/5/Profile-PNG-High-Quality-Image.png' }} style={styles.avatarImage} />
                     )}
-                    {/* Camera Icon Overlay */}
+                    {/* Camera Icon / Loading Overlay */}
                     <View style={styles.cameraIcon}>
-                        <Ionicons name="camera" size={18} color="#fff" />
+                        {uploading ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <Ionicons name="camera" size={18} color="#fff" />
+                        )}
                     </View>
                 </TouchableOpacity>
 
                 <Text style={styles.usernameText}>{editUser?.username || 'Guest'}</Text>
+                <Text style={styles.emailText}>{editUser?.email || ''}</Text>
                 <Text style={styles.deptBadge}>{editUser?.Dept || 'ไม่ระบุคณะ'}</Text>
             </View>
 
@@ -150,9 +219,17 @@ const ProfileScreen = ({ route, navigation }) => {
                     <Text style={styles.deleteButtonText}>ลบบัญชี</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Logout Button */}
+            <View style={styles.logoutRow}>
+                <TouchableOpacity onPress={handleLogout} style={styles.logoutButton} activeOpacity={0.85}>
+                    <Ionicons name="log-out-outline" size={20} color="#006664" style={{ marginRight: 6 }} />
+                    <Text style={styles.logoutButtonText}>ออกจากระบบ</Text>
+                </TouchableOpacity>
+            </View>
         </ScrollView>
-    )
-}
+    );
+};
 
 const styles = StyleSheet.create({
     scrollView: {
@@ -194,6 +271,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1a3a3a',
         marginTop: 10,
+    },
+    emailText: {
+        fontSize: 13,
+        color: '#888',
+        marginTop: 2,
     },
     deptBadge: {
         fontSize: 13,
@@ -302,6 +384,27 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: 'bold',
     },
-})
 
-export default ProfileScreen
+    /* ---- Logout Button ---- */
+    logoutRow: {
+        paddingHorizontal: 20,
+        marginTop: 16,
+    },
+    logoutButton: {
+        flexDirection: 'row',
+        backgroundColor: '#fff',
+        paddingVertical: 14,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: '#006664',
+    },
+    logoutButtonText: {
+        color: '#006664',
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
+});
+
+export default ProfileScreen;

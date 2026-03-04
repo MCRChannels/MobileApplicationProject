@@ -12,10 +12,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { ExamContext } from "../context/examContext";
+import { UserContext } from "../context/userContext";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
 const CreateExamScreen = ({ navigation }) => {
   const { dispatch } = useContext(ExamContext);
+  const { currentUser } = useContext(UserContext);
 
   const [form, setForm] = useState({
     title: "",
@@ -52,9 +56,9 @@ const CreateExamScreen = ({ navigation }) => {
     }
   };
 
-  const handleCreate = () => {
-    if (!form.title || !form.date) {
-      Alert.alert("แจ้งเตือน", "กรุณากรอกชื่อวิชาและเลือกวันที่สอบ");
+  const handleCreate = async () => {
+    if (!form.title || !form.startTime || !form.endTime || !form.date) {
+      Alert.alert("แจ้งเตือน", "กรุณากรอกข้อมูลให้ครบถ้วน");
       return;
     }
 
@@ -63,7 +67,34 @@ const CreateExamScreen = ({ navigation }) => {
       return;
     }
 
-    dispatch({ type: "ADD_OR_UPDATE", payload: form });
+    // Save to Firestore FIRST, then dispatch to context
+    const examData = {
+      title: form.title,
+      date: form.date,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      roomNumber: form.roomNumber || "",
+    };
+
+    let firestoreId = null;
+    if (!currentUser?.id) {
+      Alert.alert('ข้อผิดพลาด', 'ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่');
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, "users", currentUser.id, "exams"), examData);
+      firestoreId = docRef.id;
+    } catch (error) {
+      console.log("Save exam error full stack:", error);
+      Alert.alert('ข้อผิดพลาดจาก Firestore', `สาเหตุ: ${error.message} (Code: ${error.code})`);
+      return; // Stop here if Firestore fails!
+    }
+
+    dispatch({
+      type: "ADD_OR_UPDATE",
+      payload: { ...examData, firestoreId, id: firestoreId }
+    });
     navigation.goBack();
   };
 
@@ -149,7 +180,11 @@ const CreateExamScreen = ({ navigation }) => {
           value={showPicker.field === 'date' ? form.rawDate : new Date()}
           mode={showPicker.field === 'date' ? 'date' : 'time'}
           is24Hour={true}
-          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          display={
+            showPicker.field === 'date'
+              ? (Platform.OS === 'ios' ? 'inline' : 'default')
+              : 'spinner'
+          }
           onChange={onDateTimeChange}
         />
       )}
