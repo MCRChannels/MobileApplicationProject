@@ -39,25 +39,36 @@ const TimeTableScreen = ({ navigation }) => {
         return JSON.stringify(minifiedEvents);
     };
 
-    const handleImport = () => {
+    const handleImport = async () => {
         if (!shareCodeInput.trim()) return;
         try {
             const parsed = JSON.parse(shareCodeInput.trim());
             if (!Array.isArray(parsed)) throw new Error('Invalid format');
 
             let added = 0;
-            parsed.forEach(e => {
-                if (e.t && e.d && e.s && e.e) {
-                    const isOverlap = events.find(ev => ev.day === e.d && ev.startTime === e.s);
-                    if (!isOverlap) {
-                        eventDispatch({
-                            type: 'ADD_OR_UPDATE',
-                            payload: { title: e.t, day: e.d, startTime: e.s, endTime: e.e, roomNumber: e.r, userId: currentUser?.id }
-                        });
-                        added++;
+            const addPromises = parsed
+                .filter(e => e.t && e.d && e.s && e.e)
+                .filter(e => !events.find(ev => ev.day === e.d && ev.startTime === e.s))
+                .map(async (e) => {
+                    const eventData = { title: e.t, day: e.d, startTime: e.s, endTime: e.e, roomNumber: e.r || '' };
+                    let firestoreId = null;
+                    if (currentUser?.id) {
+                        try {
+                            const { addDoc, collection } = await import('firebase/firestore');
+                            const { db } = await import('../firebaseConfig');
+                            const docRef = await addDoc(collection(db, 'users', currentUser.id, 'events'), eventData);
+                            firestoreId = docRef.id;
+                        } catch (err) {
+                            console.log('Import to Firestore error:', err);
+                        }
                     }
-                }
-            });
+                    eventDispatch({
+                        type: 'ADD_OR_UPDATE',
+                        payload: { ...eventData, firestoreId, id: firestoreId || Date.now().toString() }
+                    });
+                    added++;
+                });
+            await Promise.all(addPromises);
             Alert.alert("นำเข้าสำเร็จ 🎉", `เพิ่มตารางเรียนทั้งหมด ${added} วิชาเรียบร้อย! (ข้ามช่วงเวลาที่มีวิชาเรียนอยู่แล้ว)`);
             setShareModalVisible(false);
             setShareCodeInput('');
@@ -96,8 +107,8 @@ const TimeTableScreen = ({ navigation }) => {
 
     const handleDelete = (item) => {
         Alert.alert(
-            "Notifications",
-            "มึงจะลบอันนี้ออกจริงๆ ใช่ไหม",
+            "ยืนยันการลบ",
+            `คุณต้องการลบ "${item.title}" ออกจากตาราง ใช่หรือไม่?`,
             [
                 { text: "ยกเลิก", style: "cancel" },
                 {
@@ -198,7 +209,7 @@ const TimeTableScreen = ({ navigation }) => {
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.addButton}
-                        onPress={() => navigation.navigate('Create')}
+                        onPress={() => navigation.navigate('Create', { initialDay: dayMapping[selectedDay] })}
                         activeOpacity={0.8}
                     >
                         <Ionicons name="add" size={22} color="#fff" />

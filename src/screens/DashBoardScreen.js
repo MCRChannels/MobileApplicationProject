@@ -20,24 +20,36 @@ const DashBoardScreen = ({ navigation }) => {
     const [activities, setActivities] = useState([]);
     const [loadingActivities, setLoadingActivities] = useState(false);
     const [isFabMenuVisible, setIsFabMenuVisible] = useState(false);
+    const [contextReady, setContextReady] = useState(false); // True once context has loaded at least once
+
+    // Mark context as ready when we receive data from login dispatch
+    useEffect(() => {
+        if (currentUser?.id) {
+            // Give context a moment to receive dispatched data from LoginScreen, then mark ready
+            const timer = setTimeout(() => setContextReady(true), 800);
+            return () => clearTimeout(timer);
+        }
+    }, [currentUser?.id]);
+
+    const isLoading = !contextReady || loadingActivities;
 
     // --- Date Helpers ---
     const getStartOfDay = (date = new Date()) => new Date(date.setHours(0, 0, 0, 0));
     const getEndOfDay = (date = new Date()) => new Date(date.setHours(23, 59, 59, 999));
 
-    const getStartOfWeek = (date = new Date()) => {
+    const getStartOfNextWeek = (date = new Date()) => {
         const d = new Date(date);
         const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday is start of week
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1) + 7; // Next Monday
         return getStartOfDay(new Date(d.setDate(diff)));
     };
-    const getEndOfWeek = (date = new Date()) => {
-        const start = getStartOfWeek(date);
+    const getEndOfNextWeek = (date = new Date()) => {
+        const start = getStartOfNextWeek(date);
         return getEndOfDay(new Date(start.setDate(start.getDate() + 6)));
     };
 
-    const getStartOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth(), 1);
-    const getEndOfMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+    const getStartOfNextMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 1, 1);
+    const getEndOfNextMonth = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 2, 0, 23, 59, 59, 999);
 
     const parseCustomDate = (dateString) => {
         if (!dateString) return null; // FIX: If no date provided, don't fall back to "today"
@@ -118,12 +130,12 @@ const DashBoardScreen = ({ navigation }) => {
         const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         filterDays = [dayMap[now.getDay()]];
     } else if (timeFilter === 'week') {
-        filterStart = getStartOfWeek(now);
-        filterEnd = getEndOfWeek(now);
+        filterStart = getStartOfNextWeek(now);
+        filterEnd = getEndOfNextWeek(now);
         filterDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     } else { // month
-        filterStart = getStartOfMonth(now);
-        filterEnd = getEndOfMonth(now);
+        filterStart = getStartOfNextMonth(now);
+        filterEnd = getEndOfNextMonth(now);
         filterDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']; // Events repeat every week
     }
 
@@ -161,13 +173,13 @@ const DashBoardScreen = ({ navigation }) => {
                 style={[styles.timeFilterBtn, timeFilter === 'week' && styles.timeFilterBtnActive]}
                 onPress={() => setTimeFilter('week')}
             >
-                <Text style={[styles.timeFilterText, timeFilter === 'week' && styles.timeFilterTextActive]}>สัปดาห์นี้</Text>
+                <Text style={[styles.timeFilterText, timeFilter === 'week' && styles.timeFilterTextActive]}>สัปดาห์หน้า</Text>
             </TouchableOpacity>
             <TouchableOpacity
                 style={[styles.timeFilterBtn, timeFilter === 'month' && styles.timeFilterBtnActive]}
                 onPress={() => setTimeFilter('month')}
             >
-                <Text style={[styles.timeFilterText, timeFilter === 'month' && styles.timeFilterTextActive]}>เดือนนี้</Text>
+                <Text style={[styles.timeFilterText, timeFilter === 'month' && styles.timeFilterTextActive]}>เดือนหน้า</Text>
             </TouchableOpacity>
         </View>
     );
@@ -248,8 +260,16 @@ const DashBoardScreen = ({ navigation }) => {
     );
 
     const renderContent = () => {
+        if (isLoading) {
+            return (
+                <View style={{ alignItems: 'center', paddingTop: 60, gap: 12 }}>
+                    <ActivityIndicator size="large" color="#006664" />
+                    <Text style={{ color: '#888', fontSize: 14 }}>กำลังโหลดข้อมูล...</Text>
+                </View>
+            );
+        }
         if (activeTab === 'classes') {
-            if (filteredClasses.length === 0) return renderEmptyState('cafe', 'ว่างเปล่าสุดๆ!', `ไม่มีวิชาเรียนในช่วงเวลา${timeFilter === 'today' ? 'ของวันนี้' : timeFilter === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'}เลย`, 'TimeTableScreen', { screen: 'Create' });
+            if (filteredClasses.length === 0) return renderEmptyState('cafe', 'ว่างเปล่าสุดๆ!', `ไม่มีวิชาเรียนในช่วงเวลา${timeFilter === 'today' ? 'ของวันนี้' : timeFilter === 'week' ? 'สัปดาห์หน้า' : 'เดือนหน้า'}เลย`, 'TimeTableScreen', { screen: 'Create' });
             return (
                 <View style={styles.listContainer}>
                     {filteredClasses.map((item, index) => (
@@ -279,7 +299,7 @@ const DashBoardScreen = ({ navigation }) => {
         }
 
         if (activeTab === 'exams') {
-            if (filteredExams.length === 0) return renderEmptyState('document', 'ไม่มีตารางสอบ', `เย่! คุณยังไม่ต้องสอบในช่วงเวลา${timeFilter === 'today' ? 'วันนี้' : timeFilter === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'}`, 'TimeTableScreen', { screen: 'CreateExam' });
+            if (filteredExams.length === 0) return renderEmptyState('document', 'ไม่มีตารางสอบ', `เย่! คุณยังไม่ต้องสอบในช่วงเวลา${timeFilter === 'today' ? 'วันนี้' : timeFilter === 'week' ? 'สัปดาห์หน้า' : 'เดือนหน้า'}`, 'TimeTableScreen', { screen: 'CreateExam' });
             return (
                 <View style={styles.listContainer}>
                     {filteredExams.map((exam, index) => (
@@ -310,7 +330,7 @@ const DashBoardScreen = ({ navigation }) => {
 
         if (activeTab === 'activities') {
             if (loadingActivities) return <ActivityIndicator size="large" color="#006664" style={{ marginTop: 40 }} />;
-            if (filteredActivities.length === 0) return renderEmptyState('leaf', 'เวลาว่างเยอะเลย', `ไม่มีกิจกรรมที่วางแผนไว้ในช่วงเวลา${timeFilter === 'today' ? 'วันนี้' : timeFilter === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'}`, 'ActivityScreen');
+            if (filteredActivities.length === 0) return renderEmptyState('leaf', 'เวลาว่างเยอะเลย', `ไม่มีกิจกรรมที่วางแผนไว้ในช่วงเวลา${timeFilter === 'today' ? 'วันนี้' : timeFilter === 'week' ? 'สัปดาห์หน้า' : 'เดือนหน้า'}`, 'ActivityScreen');
             return (
                 <View style={styles.listContainer}>
                     {filteredActivities.map((act, index) => (
@@ -322,8 +342,8 @@ const DashBoardScreen = ({ navigation }) => {
                                 </Text>
                                 <View style={styles.listItemMeta}>
                                     <View style={styles.metaBadgeBlue}>
-                                        <Ionicons name="calendar-outline" size={12} color="#2E86AB" />
-                                        <Text style={styles.metaTextBlue}>{(act.dateLabel || act.date || '')} {act.time || ''}</Text>
+                                        <Ionicons name="time-outline" size={12} color="#2E86AB" />
+                                        <Text style={styles.metaTextBlue}>{(act.dateLabel || act.date || '')} {act.time || (act.startTime ? `${act.startTime} - ${act.endTime || '?'}` : '')}</Text>
                                     </View>
                                     {act.location ? (
                                         <View style={styles.metaBadgeBlue}>
@@ -332,6 +352,13 @@ const DashBoardScreen = ({ navigation }) => {
                                         </View>
                                     ) : null}
                                 </View>
+                                {/* Conflict warning badge */}
+                                {act.conflictWith && (
+                                    <View style={styles.conflictBanner}>
+                                        <Ionicons name="warning" size={12} color="#D97706" />
+                                        <Text style={styles.conflictBannerText}>ชนกับวิชา "{act.conflictWith}"</Text>
+                                    </View>
+                                )}
                             </View>
                             {act.completed && (
                                 <View style={styles.checkCircle}>
@@ -415,7 +442,7 @@ const DashBoardScreen = ({ navigation }) => {
                                     style={styles.fabMenuItem}
                                     onPress={() => {
                                         setIsFabMenuVisible(false);
-                                        navigation.navigate('ActivityScreen');
+                                        navigation.navigate('ActivityScreen', { initialTab: 'activity' });
                                     }}
                                 >
                                     <View style={[styles.fabMenuIconWrap, { backgroundColor: 'rgba(46,134,171,0.1)' }]}>
@@ -628,6 +655,22 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         color: '#2E86AB',
+    },
+    conflictBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FEF3C7',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        borderRadius: 6,
+        marginTop: 8,
+        gap: 6,
+    },
+    conflictBannerText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#D97706',
     },
     roomPill: {
         flexDirection: 'row',

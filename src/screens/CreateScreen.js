@@ -18,13 +18,14 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { collection, addDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
-const CreateScreen = ({ navigation }) => {
+const CreateScreen = ({ navigation, route }) => {
   const { events, dispatch } = useContext(EventContext);
   const { currentUser } = useContext(UserContext);
+  const { initialDay } = route?.params || {};
 
   const [form, setForm] = useState({
     title: "",
-    day: "Monday",
+    day: initialDay || "Monday",
     startTime: "09:00",
     endTime: "12:00",
     roomNumber: "",
@@ -54,7 +55,7 @@ const CreateScreen = ({ navigation }) => {
     }
 
     if (form.endTime <= form.startTime) {
-      Alert.alert('Notifications', 'มึงก้เลือกเวลาดีๆ สิวะอย่ากวนตีน')
+      Alert.alert('แจ้งเตือน', 'เวลาสิ้นสุดต้องมากกว่าเวลาเริ่มต้น กรุณาเลือกเวลาใหม่')
       return
     }
 
@@ -76,8 +77,8 @@ const CreateScreen = ({ navigation }) => {
 
     if (overlap) {
       Alert.alert(
-        'Notifications',
-        `เวลามึงซ้ำกับวิชา "${overlap.title}" (${overlap.startTime} - ${overlap.endTime}) ในวัน ${form.day} กรุณาเลือกเวลาใหม่ไอโง่`
+        'เวลาชนกัน',
+        `เวลานี้ชนกับวิชา "${overlap.title}" (${overlap.startTime} - ${overlap.endTime}) ในวัน ${form.day} กรุณาเลือกเวลาใหม่`
       );
       return;
     }

@@ -13,25 +13,39 @@ import { TaskContext } from "../context/TaskContext";
 import { uploadImageToCloudinary } from "../cloudinaryConfig";
 
 const ProfileScreen = ({ route, navigation }) => {
-    const user = route.params?.user || {};
-    const { dispatch: userDispatch } = useContext(UserContext);
+    const { currentUser, dispatch: userDispatch } = useContext(UserContext);
     const { dispatch: eventDispatch } = useContext(EventContext);
     const { dispatch: examDispatch } = useContext(ExamContext);
     const { dispatch: taskDispatch } = useContext(TaskContext);
 
+    // Use currentUser from context as source of truth, fall back to route params for initial state
+    const user = currentUser || route.params?.user || {};
     const [editUser, setEditUser] = useState(user);
     const [uploading, setUploading] = useState(false);
+
+    // Sync editUser whenever currentUser in context changes (e.g. after Cloudinary upload + save)
+    React.useEffect(() => {
+        if (currentUser) {
+            setEditUser(currentUser);
+        }
+    }, [currentUser?.image, currentUser?.fullname, currentUser?.Dept, currentUser?.year]);
 
     const handleEditUser = (key, value) => {
         setEditUser({ ...editUser, [key]: value });
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        const uid = editUser.id || user.id;
+        if (!uid) {
+            Alert.alert('ผิดพลาด', 'ไม่พบผู้ใช้งาน กรุณาเข้าสู่ระบบใหม่ครับ');
+            return;
+        }
+        const payload = { ...editUser, id: uid };
         userDispatch({
             type: 'UPDATE_USER',
-            payload: editUser
+            payload
         });
-        Alert.alert('Notification', 'บันทึกข้อมูลสำเร็จ');
+        Alert.alert('สำเร็จ', 'บันทึกข้อมูลเรียบร้อยแล้วครับ');
     };
 
     const handleDelete = () => {
@@ -90,6 +104,41 @@ const ProfileScreen = ({ route, navigation }) => {
         } catch (error) {
             console.log("Logout error:", error);
         }
+    };
+
+    const handleClearData = () => {
+        Alert.alert(
+            '⚠️ ลบข้อมูลทั้งหมด',
+            `คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลทั้งหมด?\n\nรายการต่อไปนี้จะถูกลบออกทั้งหมด:\n• วิชาเรียนทั้งหมด\n• ตารางสอบทั้งหมด\n• กิจกรรมและแผนการเรียนทั้งหมด\n\nบัญชีของคุณจะยังคงอยู่ครับ\n\nการดำเนินการนี้ไม่สามารถย้อนกลับได้!`,
+            [
+                { text: 'ยกเลิก', style: 'cancel' },
+                {
+                    text: 'ลบทั้งหมด',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const uid = user.id;
+                            if (!uid) return;
+                            const subcollections = ['events', 'exams', 'tasks', 'activities'];
+                            for (const sub of subcollections) {
+                                const snap = await getDocs(collection(db, "users", uid, sub));
+                                for (const d of snap.docs) {
+                                    await deleteDoc(doc(db, "users", uid, sub, d.id));
+                                }
+                            }
+                            // Clear contexts
+                            eventDispatch({ type: 'CLEAR_ALL' });
+                            examDispatch({ type: 'CLEAR_ALL' });
+                            taskDispatch({ type: 'CLEAR_ALL' });
+                            Alert.alert('✅ ลบสำเร็จ', 'ลบข้อมูลทั้งหมดเรียบร้อยแล้วครับ บัญชีของคุณยังคงอยู่');
+                        } catch (error) {
+                            console.log('Clear data error:', error);
+                            Alert.alert('ผิดพลาด', 'ไม่สามารถลบข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const PickImage = async () => {
@@ -208,15 +257,10 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
 
             {/* Action Buttons */}
-            <View style={styles.buttonRow}>
-                <TouchableOpacity onPress={handleSave} style={styles.saveButton} activeOpacity={0.85}>
+            <View style={[styles.buttonRow, { justifyContent: 'center' }]}>
+                <TouchableOpacity onPress={handleSave} style={[styles.saveButton, { width: '100%', maxWidth: '100%', marginBottom: 15 }]} activeOpacity={0.85}>
                     <Ionicons name="checkmark-circle-outline" size={20} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.saveButtonText}>บันทึกการแก้ไข</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={handleDelete} style={styles.deleteButton} activeOpacity={0.85}>
-                    <Ionicons name="trash-outline" size={20} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={styles.deleteButtonText}>ลบบัญชี</Text>
                 </TouchableOpacity>
             </View>
 
@@ -227,6 +271,29 @@ const ProfileScreen = ({ route, navigation }) => {
                     <Text style={styles.logoutButtonText}>ออกจากระบบ</Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Clear Data Button */}
+            <View style={styles.clearDataSection}>
+                <TouchableOpacity onPress={handleClearData} style={styles.clearDataButton} activeOpacity={0.8}>
+                    <View style={styles.clearDataIconWrap}>
+                        <Ionicons name="trash-bin-outline" size={20} color="#DC2626" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.clearDataTitle}>ลบข้อมูลทั้งหมด</Text>
+                        <Text style={styles.clearDataSubtitle}>วิชาเรียน, สอบ, กิจกรรม, แผน (ยังคงบัญชีไว้)</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#DC2626" />
+                </TouchableOpacity>
+            </View>
+
+            {/* Delete Account Button */}
+            <View style={{ paddingHorizontal: 20, marginBottom: 40 }}>
+                <TouchableOpacity onPress={handleDelete} style={[styles.deleteButton, { width: '100%', maxWidth: '100%' }]} activeOpacity={0.85}>
+                    <Ionicons name="trash-outline" size={20} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.deleteButtonText}>ลบบัญชีผู้ใช้ถาวร</Text>
+                </TouchableOpacity>
+            </View>
+
         </ScrollView>
     );
 };
@@ -235,6 +302,46 @@ const styles = StyleSheet.create({
     scrollView: {
         flex: 1,
         backgroundColor: '#f0f2f0',
+    },
+
+    /* ---- Clear Data Button ---- */
+    clearDataSection: {
+        marginHorizontal: 20,
+        marginTop: 8,
+        marginBottom: 28,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    clearDataButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        padding: 14,
+        gap: 12,
+    },
+    clearDataIconWrap: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: '#FEF2F2',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    clearDataTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#DC2626',
+    },
+    clearDataSubtitle: {
+        fontSize: 11,
+        color: '#EF4444',
+        marginTop: 2,
     },
 
     /* ---- Avatar Section ---- */

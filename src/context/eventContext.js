@@ -16,7 +16,7 @@ const eventReducer = (state, action) => {
             );
 
             if (isOverlap) {
-                alert('เวลาชนกัน กรุณาเลือกเวลาใหม่');
+                // Validation is handled in screen components before dispatching
                 return state;
             }
 

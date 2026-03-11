@@ -53,7 +53,11 @@ const ExamScreen = ({ navigation }) => {
                         style: "destructive",
                         onPress: () => {
                             examDispatch({ type: 'DELETE_EXAM', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
-                            eventDispatch({ type: 'DELETE_EVENT', payload: { title: item.title, userId: currentUser?.id, firestoreId: item.firestoreId } });
+                            // Find the matching EVENT's own firestoreId, not the exam's
+                            const matchingEvent = events.find(e => e.title?.toLowerCase() === item.title?.toLowerCase());
+                            if (matchingEvent) {
+                                eventDispatch({ type: 'DELETE_EVENT', payload: { title: item.title, userId: currentUser?.id, firestoreId: matchingEvent.firestoreId } });
+                            }
                         }
                     }
                 ]

@@ -1,27 +1,36 @@
 import React, { useState, useContext, useEffect } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, KeyboardAvoidingView, Platform, StatusBar,
-  SafeAreaView, Alert
+  View, Text, StyleSheet, TextInput, TouchableOpacity, Switch, ScrollView, Platform, KeyboardAvoidingView, Alert, StatusBar, SafeAreaView, FlatList
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { UserContext } from "../context/userContext";
+import { EventContext } from "../context/eventContext";
 import { collection, addDoc, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
-const ActivityScreen = () => {
+const ActivityScreen = ({ route }) => {
   const { currentUser } = useContext(UserContext);
-  const [activeTab, setActiveTab] = useState('planner');
+  const { events } = useContext(EventContext);
+  const [activeTab, setActiveTab] = useState(route?.params?.initialTab || 'planner');
   const [inputText, setInputText] = useState("");
   const [locationText, setLocationText] = useState("");
 
   // Date & Time States
   const [date, setDate] = useState(new Date());
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("12:00");
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showPicker, setShowPicker] = useState({ field: null, visible: false });
 
   const [items, setItems] = useState([]);
+
+  // React to tab parameter changes when navigating to an already mounted screen
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
 
   // Load activities from Firestore on mount
   useEffect(() => {
@@ -36,6 +45,10 @@ const ActivityScreen = () => {
       }
     };
     loadActivities();
+    // Clear items on logout
+    if (!currentUser) {
+      setItems([]);
+    }
   }, [currentUser?.id]);
 
   const onDateChange = (event, selectedDate) => {
@@ -43,29 +56,43 @@ const ActivityScreen = () => {
     if (selectedDate) setDate(selectedDate);
   };
 
-  const onTimeChange = (event, selectedTime) => {
-    setShowTimePicker(Platform.OS === 'ios');
-    if (selectedTime) setDate(selectedTime);
+  const onTimeChange = (event, selectedDate) => {
+    setShowPicker({ ...showPicker, visible: false });
+    if (selectedDate) {
+      const hours = selectedDate.getHours().toString().padStart(2, '0');
+      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+      const timeString = `${hours}:${minutes}`;
+
+      if (showPicker.field === 'start') {
+        setStartTime(timeString);
+      } else {
+        setEndTime(timeString);
+      }
+    }
   };
 
-  const handleAddItem = async () => {
-    if (!inputText.trim()) return;
+  // Helper: check if activity time overlaps with any class on the same day
+  const findConflictingClass = (activityDate) => {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[activityDate.getDay()];
+    const [actStartH, actStartM] = startTime.split(':').map(Number);
+    const [actEndH, actEndM] = endTime.split(':').map(Number);
+    const actStart = actStartH * 60 + actStartM;
+    const actEnd = actEndH * 60 + actEndM;
 
-    const dateLabel = date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-    const timeLabel = date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    return events.find(e => {
+      if (e.day !== dayName) return false;
+      const [classStartH, classStartM] = e.startTime.split(':').map(Number);
+      const [classEndH, classEndM] = e.endTime.split(':').map(Number);
+      const classStart = classStartH * 60 + classStartM;
+      const classEnd = classEndH * 60 + classEndM;
 
-    const newItem = {
-      title: inputText,
-      type: activeTab,
-      completed: false,
-      ...(activeTab === 'activity' && {
-        location: locationText || 'ไม่ระบุสถานที่',
-        time: timeLabel,
-        dateLabel: dateLabel
-      })
-    };
+      // Activity overlaps with class time slot
+      return (actStart < classEnd && actEnd > classStart);
+    });
+  };
 
-    // Save to Firestore
+  const saveActivity = async (newItem) => {
     if (currentUser?.id) {
       try {
         const docRef = await addDoc(collection(db, "users", currentUser.id, "activities"), newItem);
@@ -78,10 +105,66 @@ const ActivityScreen = () => {
     } else {
       newItem.id = Date.now().toString();
     }
-
-    setItems([newItem, ...items]);
+    setItems(prev => [newItem, ...prev]);
     setInputText("");
     setLocationText("");
+  };
+
+  const handleAddItem = async () => {
+    if (!inputText.trim()) {
+      Alert.alert('แจ้งเตือน', 'กรุณากรอกชื่อรายการก่อนครับ');
+      return;
+    }
+
+    const dateLabel = date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    const startTimeLabel = startTime;
+    const endTimeLabel = endTime;
+
+    // Validate times
+    if (activeTab === 'activity') {
+      const [startH, startM] = startTime.split(':').map(Number);
+      const [endH, endM] = endTime.split(':').map(Number);
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+      if (startMinutes >= endMinutes) {
+        Alert.alert('แจ้งเตือน', 'เวลาเริ่มต้องมาก่อนเวลาสิ้นสุดครับ');
+        return;
+      }
+    }
+
+    const newItem = {
+      title: inputText,
+      type: activeTab,
+      completed: false,
+      ...(activeTab === 'activity' && {
+        location: locationText || 'ไม่ระบุสถานที่',
+        time: `${startTimeLabel} - ${endTimeLabel}`,
+        startTime: startTimeLabel,
+        endTime: endTimeLabel,
+        dateLabel: dateLabel
+      })
+    };
+
+    // Only check conflicts for 'activity' tab (not planner)
+    if (activeTab === 'activity') {
+      const conflict = findConflictingClass(date);
+      if (conflict) {
+        Alert.alert(
+          '⏰ เวลาชนกับวิชาเรียน!',
+          `เวลา ${startTimeLabel} - ${endTimeLabel} ตรงกับคาบเรียนวิชา "${conflict.title}" (${conflict.startTime} - ${conflict.endTime})คุณยังต้องการเพิ่มกิจกรรมนี้อยู่หรือไม่?`,
+          [
+            { text: 'ยกเลิก', style: 'cancel' },
+            {
+              text: 'เพิ่มต่อไป',
+              onPress: () => saveActivity({ ...newItem, conflictWith: conflict.title }),
+            },
+          ]
+        );
+        return; // Wait for user's choice
+      }
+    }
+
+    await saveActivity(newItem);
   };
 
   const deleteItem = async (id) => {
@@ -175,6 +258,13 @@ const ActivityScreen = () => {
             <Text style={styles.actTagText}>{item.time}</Text>
           </View>
         </View>
+        {/* Conflict warning badge */}
+        {item.conflictWith && (
+          <View style={styles.conflictBanner}>
+            <Ionicons name="warning" size={12} color="#D97706" />
+            <Text style={styles.conflictBannerText}>ชนกับวิชา "{item.conflictWith}"</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -226,7 +316,7 @@ const ActivityScreen = () => {
             style={{ marginRight: 6 }}
           />
           <Text style={[styles.tabBtnText, activeTab === 'planner' && styles.tabBtnTextActive]}>
-            แผนการเรียน
+            Study Plan
           </Text>
           {plannerCount > 0 && (
             <View style={[styles.tabBadge, activeTab === 'planner' && styles.tabBadgeActive]}>
@@ -297,21 +387,43 @@ const ActivityScreen = () => {
 
               <View style={styles.dateTimeRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>วันที่</Text>
-                  <TouchableOpacity style={styles.dtPickerBtn} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
-                    <Ionicons name="calendar-outline" size={18} color="#006664" />
-                    <Text style={styles.dtPickerText}>
+                  <Text style={styles.pickerLabel}>DATE</Text>
+                  <TouchableOpacity
+                    style={styles.pickerInputWrapper}
+                    onPress={() => setShowDatePicker(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="calendar-outline" size={18} color="#006664" style={styles.pickerIcon} />
+                    <Text style={styles.pickerValueText}>
                       {date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inputLabel}>เวลา</Text>
-                  <TouchableOpacity style={styles.dtPickerBtn} onPress={() => setShowTimePicker(true)} activeOpacity={0.7}>
-                    <Ionicons name="time-outline" size={18} color="#006664" />
-                    <Text style={styles.dtPickerText}>
-                      {date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                  <Text style={styles.pickerLabel}>START</Text>
+                  <TouchableOpacity
+                    style={styles.pickerInputWrapper}
+                    onPress={() => setShowPicker({ field: 'start', visible: true })}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="time-outline" size={18} color="#006664" style={styles.pickerIcon} />
+                    <Text style={styles.pickerValueText}>
+                      {startTime}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pickerLabel}>END</Text>
+                  <TouchableOpacity
+                    style={styles.pickerInputWrapper}
+                    onPress={() => setShowPicker({ field: 'end', visible: true })}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="time-outline" size={18} color="#006664" style={styles.pickerIcon} />
+                    <Text style={styles.pickerValueText}>
+                      {endTime}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -334,9 +446,10 @@ const ActivityScreen = () => {
             onChange={onDateChange}
           />
         )}
-        {showTimePicker && (
+        {showPicker.visible && (
           <DateTimePicker
-            value={date}
+            testID="timePicker"
+            value={new Date()}
             mode="time"
             is24Hour={true}
             display="spinner"
@@ -354,7 +467,7 @@ const ActivityScreen = () => {
           ListEmptyComponent={renderEmpty}
         />
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </SafeAreaView >
   );
 };
 
@@ -511,22 +624,36 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 12,
   },
-  dtPickerBtn: {
-    flex: 1,
+  pickerLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    marginBottom: 6,
+    letterSpacing: 1,
+  },
+  pickerInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,102,100,0.06)',
-    paddingVertical: 11,
-    borderRadius: 12,
-    gap: 6,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: 'rgba(0,102,100,0.12)',
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  dtPickerText: {
-    color: '#006664',
-    fontWeight: '700',
-    fontSize: 13,
+  pickerIcon: {
+    marginRight: 10,
+  },
+  pickerValueText: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontWeight: '600',
+    flex: 1,
   },
   addBtn: {
     flexDirection: 'row',
@@ -701,6 +828,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#94A3B8',
     textAlign: 'center',
+  },
+  conflictBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 8,
+    gap: 5,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  conflictBannerText: {
+    fontSize: 11,
+    color: '#D97706',
+    fontWeight: '700',
   },
 });
 
