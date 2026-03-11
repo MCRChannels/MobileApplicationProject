@@ -5,7 +5,7 @@ import { ExamContext } from '../context/examContext';
 import { UserContext } from '../context/userContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebaseConfig";
 
@@ -21,6 +21,7 @@ const DashBoardScreen = ({ navigation }) => {
     const [loadingActivities, setLoadingActivities] = useState(false);
     const [isFabMenuVisible, setIsFabMenuVisible] = useState(false);
     const [contextReady, setContextReady] = useState(false); // True once context has loaded at least once
+    const [currentTime, setCurrentTime] = useState(new Date());
 
     // Mark context as ready when we receive data from login dispatch
     useEffect(() => {
@@ -30,6 +31,14 @@ const DashBoardScreen = ({ navigation }) => {
             return () => clearTimeout(timer);
         }
     }, [currentUser?.id]);
+
+    // Update current time every minute to refresh "Next Class" status
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 60000); // 1 minute
+        return () => clearInterval(timer);
+    }, []);
 
     const isLoading = !contextReady || loadingActivities;
 
@@ -84,40 +93,43 @@ const DashBoardScreen = ({ navigation }) => {
         return new Date(dateString); // Fallback
     };
 
-    // --- Load Activities ---
-    const fetchActivities = async (uid) => {
-        if (!uid) return;
-        setLoadingActivities(true);
-        try {
-            const snap = await getDocs(collection(db, "users", uid, "activities"));
-            const loaded = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-            // Parse date for filtering
-            const withDateObj = loaded.map(item => ({
-                ...item,
-                dateObj: parseCustomDate(item.dateLabel || item.date)
-            }));
-            setActivities(withDateObj);
-        } catch (error) {
-            console.log("Load dashboard activities error:", error);
-        } finally {
-            setLoadingActivities(false);
-        }
-    };
+    // --- Load Activities (Real-time) ---
+    useEffect(() => {
+        let unsubscribe = () => { };
 
-    useFocusEffect(
-        useCallback(() => {
-            // Context might be slow, use Auth state directly as fallback for reliability
-            const uid = currentUser?.id || auth.currentUser?.uid;
-            if (uid) {
-                fetchActivities(uid);
-            } else {
-                const unsubscribe = onAuthStateChanged(auth, (user) => {
-                    if (user) fetchActivities(user.uid);
-                });
-                return () => unsubscribe();
-            }
-        }, [currentUser?.id])
-    );
+        const setupListener = (uid) => {
+            if (!uid) return;
+            setLoadingActivities(true);
+            unsubscribe = onSnapshot(collection(db, "users", uid, "activities"), (snap) => {
+                const loaded = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                // Parse date for filtering
+                const withDateObj = loaded.map(item => ({
+                    ...item,
+                    dateObj: parseCustomDate(item.dateLabel || item.date)
+                }));
+                setActivities(withDateObj);
+                setLoadingActivities(false);
+            }, (error) => {
+                console.log("Load dashboard activities error:", error);
+                setLoadingActivities(false);
+            });
+        };
+
+        const uid = currentUser?.id || auth.currentUser?.uid;
+        if (uid) {
+            setupListener(uid);
+        } else {
+            const authUnsub = onAuthStateChanged(auth, (user) => {
+                if (user) setupListener(user.uid);
+            });
+            return () => {
+                unsubscribe();
+                authUnsub();
+            };
+        }
+
+        return () => unsubscribe();
+    }, [currentUser?.id]);
 
     // --- Filter Logic ---
     let filterStart, filterEnd, filterDays;
@@ -159,8 +171,178 @@ const DashBoardScreen = ({ navigation }) => {
         return a.dateObj >= filterStart && a.dateObj <= filterEnd;
     }).sort((a, b) => a.dateObj - b.dateObj);
 
+    // --- Next Class Logic ---
+    const getNextClassInfo = () => {
+        if (!events || events.length === 0) return { status: 'ยังไม่มีวิชาเรียน', class: null, active: false, empty: true };
+        const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const nowTime = currentTime; // Use state-based time for reactivity
+        const today = dayMap[nowTime.getDay()];
+        const currentMinutes = nowTime.getHours() * 60 + nowTime.getMinutes();
+
+        // Get all classes today and sort by start time
+        const todaysClasses = events.filter(e => e.day === today).sort((a, b) => {
+            const [aH, aM] = a.startTime.split(':').map(Number);
+            const [bH, bM] = b.startTime.split(':').map(Number);
+            return (aH * 60 + aM) - (bH * 60 + bM);
+        });
+
+        // 1. Ongoing?
+        const ongoing = todaysClasses.find(e => {
+            const [sH, sM] = e.startTime.split(':').map(Number);
+            const [eH, eM] = e.endTime.split(':').map(Number);
+            const start = sH * 60 + sM;
+            const end = eH * 60 + eM;
+            return currentMinutes >= start && currentMinutes <= end;
+        });
+        if (ongoing) return { status: 'กำลังเรียนอยู่', class: ongoing, active: true };
+
+        // 2. Next class today?
+        const next = todaysClasses.find(e => {
+            const [sH, sM] = e.startTime.split(':').map(Number);
+            const start = sH * 60 + sM;
+            return start > currentMinutes;
+        });
+        if (next) return { status: 'วิชาถัดไป', class: next, active: false };
+
+        // 3. Tomorrow's first class? (Look ahead for display in 'no more' state)
+        const tomorrowIndex = (nowTime.getDay() + 1) % 7;
+        const tomorrow = dayMap[tomorrowIndex];
+        const nextClassesTomorrow = events.filter(e => e.day === tomorrow).sort((a, b) => {
+            const [aH, aM] = a.startTime.split(':').map(Number);
+            const [bH, bM] = b.startTime.split(':').map(Number);
+            return (aH * 60 + aM) - (bH * 60 + bM);
+        });
+
+        return {
+            status: 'ไม่มีเรียนแล้ว',
+            class: null,
+            active: false,
+            tomorrowClass: nextClassesTomorrow.length > 0 ? nextClassesTomorrow[0] : null
+        };
+    };
+
+    const nextClassInfo = getNextClassInfo();
 
     // --- Render Helpers ---
+    const renderNextClassCard = () => {
+        if (!nextClassInfo) return null;
+        const { status, class: item, active, tomorrowClass, empty } = nextClassInfo;
+
+        if (empty) {
+            // "No classes at all" state
+            return (
+                <View style={[styles.nextClassCard, { backgroundColor: '#fff', borderWidth: 2, borderColor: '#006664', borderStyle: 'dashed', shadowOpacity: 0.05, elevation: 1 }]}>
+                    <View style={styles.nextClassHeader}>
+                        <View style={[styles.statusBadge, { backgroundColor: '#F0FFF4' }]}>
+                            <View style={[styles.statusDot, { backgroundColor: '#38A169' }]} />
+                            <Text style={[styles.statusText, { color: '#2F855A' }]}>{status}</Text>
+                        </View>
+                        <Ionicons name="book-outline" size={18} color="#006664" />
+                    </View>
+                    <View style={styles.nextClassBody}>
+                        <Text style={[styles.nextClassTitle, { color: '#006664', fontSize: 20 }]}>เริ่มต้นจัดการตารางเรียน</Text>
+                        <TouchableOpacity
+                            style={{
+                                marginTop: 15,
+                                backgroundColor: '#006664',
+                                paddingVertical: 10,
+                                paddingHorizontal: 20,
+                                borderRadius: 12,
+                                alignSelf: 'flex-start',
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 8
+                            }}
+                            onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Create' })}
+                        >
+                            <Text style={{ fontSize: 14, color: '#fff', fontWeight: 'bold' }}>เริ่มเพิ่มวิชาเรียน</Text>
+                            <Ionicons name="add" size={18} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            );
+        }
+
+        if (!item) {
+            // "No more classes today" state
+            return (
+                <View style={[styles.nextClassCard, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', shadowOpacity: 0.05, elevation: 1 }]}>
+                    <View style={styles.nextClassHeader}>
+                        <View style={[styles.statusBadge, { backgroundColor: '#E2E8F0' }]}>
+                            <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                            <Text style={[styles.statusText, { color: '#64748B' }]}>{status}</Text>
+                        </View>
+                        <Ionicons name="sunny-outline" size={18} color="#D97706" />
+                    </View>
+                    <View style={styles.nextClassBody}>
+                        <Text style={[styles.nextClassTitle, { color: '#1E293B', fontSize: 20 }]}>เย่! วันนี้ไม่มีเรียนแล้ว</Text>
+
+                        {tomorrowClass ? (
+                            <View style={{ marginTop: 12, padding: 12, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#EDF2F7' }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                    <View style={{ width: 4, height: 12, backgroundColor: '#006664', borderRadius: 2 }} />
+                                    <Text style={{ fontSize: 12, color: '#006664', fontWeight: 'bold' }}>พรุ่งนี้เริ่มเรียนวิชา:</Text>
+                                </View>
+                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#2D3748', marginBottom: 4 }}>{tomorrowClass.title}</Text>
+                                <View style={{ flexDirection: 'row', gap: 12 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                        <Ionicons name="time-outline" size={12} color="#718096" />
+                                        <Text style={{ fontSize: 12, color: '#718096' }}>{tomorrowClass.startTime} - {tomorrowClass.endTime}</Text>
+                                    </View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                        <Ionicons name="location-outline" size={12} color="#718096" />
+                                        <Text style={{ fontSize: 12, color: '#718096' }}>{tomorrowClass.roomNumber || 'N/A'}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        ) : (
+                            <TouchableOpacity
+                                style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                                onPress={() => navigation.navigate('TimeTableScreen', { screen: 'Create' })}
+                            >
+                                <Text style={{ fontSize: 14, color: '#006664', fontWeight: 'bold' }}>เพิ่มวิชาเรียนใหม่</Text>
+                                <Ionicons name="add-circle" size={16} color="#006664" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            );
+        }
+
+        return (
+            <TouchableOpacity
+                style={styles.nextClassCard}
+                onPress={() => navigation.navigate('TimeTableScreen')}
+                activeOpacity={0.9}
+            >
+                <View style={styles.nextClassHeader}>
+                    <View style={[styles.statusBadge, active && styles.statusBadgeActive]}>
+                        <View style={[styles.statusDot, active && styles.statusDotActive]} />
+                        <Text style={[styles.statusText, active && styles.statusTextActive]}>{status}</Text>
+                    </View>
+                    <Ionicons name="notifications-outline" size={18} color="#fff" />
+                </View>
+
+                <View style={styles.nextClassBody}>
+                    <Text style={styles.nextClassTitle} numberOfLines={1}>{item.title}</Text>
+                    <View style={styles.nextClassInfoRow}>
+                        <View style={styles.nextClassInfoItem}>
+                            <Ionicons name="time" size={16} color="rgba(255,255,255,0.7)" />
+                            <Text style={styles.nextClassInfoText}>{item.startTime} - {item.endTime}</Text>
+                        </View>
+                        <View style={styles.nextClassInfoItem}>
+                            <Ionicons name="pin" size={16} color="rgba(255,255,255,0.7)" />
+                            <Text style={styles.nextClassInfoText}>{item.roomNumber || 'N/A'}</Text>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Decorative glow background element */}
+                <View style={styles.nextClassGlow} />
+            </TouchableOpacity>
+        );
+    };
+
     const renderFilterTabs = () => (
         <View style={styles.timeFilterContainer}>
             <TouchableOpacity
@@ -379,7 +561,10 @@ const DashBoardScreen = ({ navigation }) => {
                 {/* 1. Time Filters */}
                 {renderFilterTabs()}
 
-                {/* 2. Summary Cards */}
+                {/* 2. Next Class Card (Show only for 'today') */}
+                {timeFilter === 'today' && renderNextClassCard()}
+
+                {/* 3. Summary Cards */}
                 {renderSummaryCards()}
 
                 {/* 3. Category Tabs */}
@@ -469,6 +654,89 @@ const styles = StyleSheet.create({
         paddingTop: 15,
         paddingHorizontal: 20,
     },
+    /* --- Next Class Card --- */
+    nextClassCard: {
+        backgroundColor: '#006664',
+        borderRadius: 24,
+        padding: 24,
+        marginBottom: 24,
+        shadowColor: '#006664',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 15,
+        elevation: 10,
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    nextClassGlow: {
+        position: 'absolute',
+        top: -50,
+        right: -50,
+        width: 150,
+        height: 150,
+        borderRadius: 75,
+        backgroundColor: 'rgba(195, 235, 50, 0.15)',
+    },
+    nextClassHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    statusBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        gap: 6,
+    },
+    statusBadgeActive: {
+        backgroundColor: '#c3eb32',
+    },
+    statusDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: 'rgba(255,255,255,0.6)',
+    },
+    statusDotActive: {
+        backgroundColor: '#006664',
+    },
+    statusText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    statusTextActive: {
+        color: '#006664',
+    },
+    nextClassBody: {
+        gap: 8,
+    },
+    nextClassTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#fff',
+        letterSpacing: 0.5,
+    },
+    nextClassInfoRow: {
+        flexDirection: 'row',
+        gap: 20,
+        marginTop: 4,
+    },
+    nextClassInfoItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    nextClassInfoText: {
+        fontSize: 14,
+        color: 'rgba(255,255,255,0.85)',
+        fontWeight: '600',
+    },
+
 
     /* 1. Time Filters */
     timeFilterContainer: {

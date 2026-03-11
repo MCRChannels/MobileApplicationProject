@@ -1,7 +1,10 @@
 import React, { createContext, useReducer } from "react";
 import { Alert } from 'react-native';
-import { doc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { doc, setDoc, updateDoc, deleteDoc, collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebaseConfig";
+import { EventContext } from "./eventContext";
+import { ExamContext } from "./examContext";
+import { TaskContext } from "./TaskContext";
 
 export const UserContext = createContext();
 
@@ -62,8 +65,77 @@ const initialState = {
 export const UserProvider = ({ children }) => {
     const [state, dispatch] = useReducer(userReducer, initialState);
 
+    // Listeners state to keep track of unsubscribes
+    const [unsubscribers, setUnsubscribers] = React.useState([]);
+
+    // We will inject context dispatchers for global real-time sync
+    const [globalDispatchers, setGlobalDispatchers] = React.useState(null);
+
+    React.useEffect(() => {
+        // Clear old listeners if user changes or logs out
+        unsubscribers.forEach(unsub => unsub());
+        setUnsubscribers([]);
+
+        if (state.currentUser?.id) {
+            const uid = state.currentUser.id;
+            const newUnsubs = [];
+
+            // 0. Profile listener (Real-time sync for current user)
+            const unsubProfile = onSnapshot(doc(db, "users", uid), (snapshot) => {
+                if (snapshot.exists()) {
+                    const userData = { id: snapshot.id, ...snapshot.data() };
+                    // Avoid infinite loop if data is already same, but dispatch usually handles it
+                    dispatch({ type: 'SET_CURRENT_USER', payload: userData });
+                }
+            });
+            newUnsubs.push(unsubProfile);
+
+            if (globalDispatchers) {
+                // 1. Events listener
+                const unsubEvents = onSnapshot(collection(db, "users", uid, "events"), (snapshot) => {
+                    const events = snapshot.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
+                    globalDispatchers.eventDispatch({ type: "SET_EVENTS", payload: events });
+                });
+                newUnsubs.push(unsubEvents);
+
+                // 2. Exams listener
+                const unsubExams = onSnapshot(collection(db, "users", uid, "exams"), (snapshot) => {
+                    const exams = snapshot.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
+                    globalDispatchers.examDispatch({ type: "SET_EXAMS", payload: exams });
+                });
+                newUnsubs.push(unsubExams);
+
+                // 3. Tasks listener
+                const unsubTasks = onSnapshot(collection(db, "users", uid, "tasks"), (snapshot) => {
+                    const tasks = snapshot.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
+                    globalDispatchers.taskDispatch({ type: "SET_TASKS", payload: tasks });
+                });
+                newUnsubs.push(unsubTasks);
+
+                // 4. Activities listener (Added for completeness if not already handled elsewhere)
+                const unsubActivities = onSnapshot(collection(db, "users", uid, "activities"), (snapshot) => {
+                    const activities = snapshot.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
+                    if (globalDispatchers.activityDispatch) {
+                        globalDispatchers.activityDispatch({ type: "SET_ACTIVITIES", payload: activities });
+                    }
+                });
+                newUnsubs.push(unsubActivities);
+            }
+            setUnsubscribers(newUnsubs);
+        }
+
+        return () => {
+            unsubscribers.forEach(unsub => unsub());
+        };
+    }, [state.currentUser?.id, globalDispatchers]);
+
     return (
-        <UserContext.Provider value={{ users: state.users, currentUser: state.currentUser, dispatch }}>
+        <UserContext.Provider value={{
+            users: state.users,
+            currentUser: state.currentUser,
+            dispatch,
+            setGlobalDispatchers
+        }}>
             {children}
         </UserContext.Provider>
     );

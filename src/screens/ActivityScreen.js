@@ -1,17 +1,19 @@
 import React, { useState, useContext, useEffect } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, Switch, ScrollView, Platform, KeyboardAvoidingView, Alert, StatusBar, SafeAreaView, FlatList
+  View, Text, StyleSheet, TextInput, TouchableOpacity, Switch, ScrollView, Platform, KeyboardAvoidingView, Alert, StatusBar, SafeAreaView, FlatList, Modal
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { UserContext } from "../context/userContext";
 import { EventContext } from "../context/eventContext";
-import { collection, addDoc, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
+import { ExamContext } from "../context/examContext";
+import { collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
 const ActivityScreen = ({ route }) => {
   const { currentUser } = useContext(UserContext);
   const { events } = useContext(EventContext);
+  const { exams } = useContext(ExamContext);
   const [activeTab, setActiveTab] = useState(route?.params?.initialTab || 'planner');
   const [inputText, setInputText] = useState("");
   const [locationText, setLocationText] = useState("");
@@ -22,6 +24,8 @@ const ActivityScreen = ({ route }) => {
   const [endTime, setEndTime] = useState("12:00");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showPicker, setShowPicker] = useState({ field: null, visible: false });
+  const [tempDate, setTempDate] = useState(new Date());
+  const [tempTime, setTempTime] = useState(new Date());
 
   const [items, setItems] = useState([]);
 
@@ -32,82 +36,159 @@ const ActivityScreen = ({ route }) => {
     }
   }, [route?.params?.initialTab]);
 
-  // Load activities from Firestore on mount
+  // Load activities from Firestore on mount (Real-time)
   useEffect(() => {
-    const loadActivities = async () => {
-      if (!currentUser?.id) return;
-      try {
-        const snap = await getDocs(collection(db, "users", currentUser.id, "activities"));
+    let unsubscribe = () => { };
+
+    if (currentUser?.id) {
+      unsubscribe = onSnapshot(collection(db, "users", currentUser.id, "activities"), (snap) => {
         const loaded = snap.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
         setItems(loaded);
-      } catch (error) {
-        console.log("Load activities error:", error);
-      }
-    };
-    loadActivities();
-    // Clear items on logout
-    if (!currentUser) {
+      }, (error) => {
+        console.log("Listen activities error:", error);
+      });
+    } else {
       setItems([]);
     }
+
+    return () => unsubscribe();
   }, [currentUser?.id]);
 
+  const openDatePicker = () => {
+    setTempDate(date);
+    setShowDatePicker(true);
+  };
+
   const onDateChange = (event, selectedDate) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) setDate(selectedDate);
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      if (selectedDate) setDate(selectedDate);
+    } else {
+      if (selectedDate) setTempDate(selectedDate);
+    }
+  };
+
+  const confirmIOSDate = () => {
+    setDate(tempDate);
+    setShowDatePicker(false);
+  };
+
+  const openTimePicker = (field) => {
+    const currentVal = field === 'start' ? startTime : endTime;
+    const [h, m] = currentVal.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    setTempTime(d);
+    setShowPicker({ field, visible: true });
   };
 
   const onTimeChange = (event, selectedDate) => {
-    setShowPicker({ ...showPicker, visible: false });
-    if (selectedDate) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      const timeString = `${hours}:${minutes}`;
-
-      if (showPicker.field === 'start') {
-        setStartTime(timeString);
-      } else {
-        setEndTime(timeString);
+    if (Platform.OS === 'android') {
+      setShowPicker({ ...showPicker, visible: false });
+      if (selectedDate) {
+        const hours = selectedDate.getHours().toString().padStart(2, '0');
+        const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+        const timeString = `${hours}:${minutes}`;
+        if (showPicker.field === 'start') {
+          setStartTime(timeString);
+        } else {
+          setEndTime(timeString);
+        }
       }
+    } else {
+      if (selectedDate) setTempTime(selectedDate);
     }
   };
 
-  // Helper: check if activity time overlaps with any class on the same day
-  const findConflictingClass = (activityDate) => {
+  const confirmIOSTime = () => {
+    const hours = tempTime.getHours().toString().padStart(2, '0');
+    const minutes = tempTime.getMinutes().toString().padStart(2, '0');
+    const timeString = `${hours}:${minutes}`;
+    if (showPicker.field === 'start') {
+      setStartTime(timeString);
+    } else {
+      setEndTime(timeString);
+    }
+    setShowPicker({ field: null, visible: false });
+  };
+
+  // Helper: check if activity time overlaps with any class, exam, or existing activity on the same day
+  const findConflict = (activityDate) => {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayName = dayNames[activityDate.getDay()];
+
+    // Format date for comparisons
+    const dateLabel = activityDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    // For exams (matching both EN and TH formats)
+    const formattedDateEN = activityDate.toLocaleDateString('en-GB', {
+      weekday: 'long', day: 'numeric', month: 'short', year: 'numeric'
+    });
+
     const [actStartH, actStartM] = startTime.split(':').map(Number);
     const [actEndH, actEndM] = endTime.split(':').map(Number);
     const actStart = actStartH * 60 + actStartM;
     const actEnd = actEndH * 60 + actEndM;
 
-    return events.find(e => {
+    // 1. Check Classes
+    const classConflict = events.find(e => {
       if (e.day !== dayName) return false;
-      const [classStartH, classStartM] = e.startTime.split(':').map(Number);
-      const [classEndH, classEndM] = e.endTime.split(':').map(Number);
-      const classStart = classStartH * 60 + classStartM;
-      const classEnd = classEndH * 60 + classEndM;
-
-      // Activity overlaps with class time slot
-      return (actStart < classEnd && actEnd > classStart);
+      const [startH, startM] = e.startTime.split(':').map(Number);
+      const [endH, endM] = e.endTime.split(':').map(Number);
+      const start = startH * 60 + startM;
+      const end = endH * 60 + endM;
+      return (actStart < end && actEnd > start);
     });
+    if (classConflict) return { type: 'class', data: classConflict };
+
+    // 2. Check Exams
+    const examConflict = exams.find(e => {
+      // Try multiple date matches
+      let sameDate = (e.date === formattedDateEN || e.date === dateLabel);
+      if (!sameDate && e.rawDate) {
+        sameDate = new Date(e.rawDate).toDateString() === activityDate.toDateString();
+      }
+      if (!sameDate) return false;
+
+      const [startH, startM] = e.startTime.split(':').map(Number);
+      const [endH, endM] = e.endTime.split(':').map(Number);
+      const start = startH * 60 + startM;
+      const end = endH * 60 + endM;
+      return (actStart < end && actEnd > start);
+    });
+    if (examConflict) return { type: 'exam', data: examConflict };
+
+    // 3. Check Other Activities
+    const activityConflict = items.find(item => {
+      if (item.type !== 'activity' || item.dateLabel !== dateLabel) return false;
+      const [startH, startM] = item.startTime.split(':').map(Number);
+      const [endH, endM] = item.endTime.split(':').map(Number);
+      const start = startH * 60 + startM;
+      const end = endH * 60 + endM;
+      return (actStart < end && actEnd > start);
+    });
+    if (activityConflict) return { type: 'other_activity', data: activityConflict };
+
+    return null;
   };
 
   const saveActivity = async (newItem) => {
     if (currentUser?.id) {
       try {
-        const docRef = await addDoc(collection(db, "users", currentUser.id, "activities"), newItem);
-        newItem.id = docRef.id;
-        newItem.firestoreId = docRef.id;
+        await addDoc(collection(db, "users", currentUser.id, "activities"), newItem);
+        setInputText("");
+        setLocationText("");
       } catch (error) {
         console.log("Add activity error:", error);
-        newItem.id = Date.now().toString();
+        Alert.alert('ผิดพลาด', 'ไม่สามารถบันทึกกิจกรรมได้ครับ');
       }
     } else {
+      // Fallback for non-logged in state (should not happen with existing flows)
       newItem.id = Date.now().toString();
+      setItems(prev => [newItem, ...prev]);
+      setInputText("");
+      setLocationText("");
     }
-    setItems(prev => [newItem, ...prev]);
-    setInputText("");
-    setLocationText("");
   };
 
   const handleAddItem = async () => {
@@ -147,20 +228,36 @@ const ActivityScreen = ({ route }) => {
 
     // Only check conflicts for 'activity' tab (not planner)
     if (activeTab === 'activity') {
-      const conflict = findConflictingClass(date);
+      const conflict = findConflict(date);
       if (conflict) {
+        const { type, data } = conflict;
+        const conflictTitle = data.title;
+
+        let conflictTypeLabel = 'รายการอื่น';
+        if (type === 'class') conflictTypeLabel = 'วิชาเรียน';
+        if (type === 'exam') conflictTypeLabel = 'สอบ';
+        if (type === 'other_activity') conflictTypeLabel = 'กิจกรรมอื่น';
+
+        // For other activities, we strictly block as requested
+        if (type === 'other_activity') {
+          Alert.alert(
+            `❌ เวลาทับซ้อนกับ${conflictTypeLabel}!`,
+            `กิจกรรม "${inputText}" มีเวลาทับซ้อนกับ "${conflictTitle}" (${data.startTime} - ${data.endTime}) ในช่วงเวลาเดียวกันพอดีครับ`,
+            [{ text: 'ตกลง', style: 'default' }]
+          );
+          return;
+        }
+
+        // For classes/exams, we can keep the "Add anyway" option or block too
+        // User asked "cannot add" (เพิ่มไม่ได้) and "popup เหมือนตอนใส่เวลาเรียนซ้ำ"
+        // Let's make it a strict check for all for consistency if requested, but usually classes are priority.
+        // User said: "เขียนให้มันไม่สามารถเพิ่มกิจกรรมในเวลาเดียวกันได้ด้วยครับ"
         Alert.alert(
-          '⏰ เวลาชนกับวิชาเรียน!',
-          `เวลา ${startTimeLabel} - ${endTimeLabel} ตรงกับคาบเรียนวิชา "${conflict.title}" (${conflict.startTime} - ${conflict.endTime})คุณยังต้องการเพิ่มกิจกรรมนี้อยู่หรือไม่?`,
-          [
-            { text: 'ยกเลิก', style: 'cancel' },
-            {
-              text: 'เพิ่มต่อไป',
-              onPress: () => saveActivity({ ...newItem, conflictWith: conflict.title }),
-            },
-          ]
+          `⏰ เวลาทับซ้อนกับ${conflictTypeLabel}!`,
+          `เวลา ${startTimeLabel} - ${endTimeLabel} ตรงกับ${conflictTypeLabel} "${conflictTitle}" (${data.startTime} - ${data.endTime}) กรุณาเปลี่ยนช่วงเวลาใหม่ครับ`,
+          [{ text: 'ตกลง', style: 'default' }]
         );
-        return; // Wait for user's choice
+        return;
       }
     }
 
@@ -390,7 +487,7 @@ const ActivityScreen = ({ route }) => {
                   <Text style={styles.pickerLabel}>DATE</Text>
                   <TouchableOpacity
                     style={styles.pickerInputWrapper}
-                    onPress={() => setShowDatePicker(true)}
+                    onPress={openDatePicker}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="calendar-outline" size={18} color="#006664" style={styles.pickerIcon} />
@@ -404,7 +501,7 @@ const ActivityScreen = ({ route }) => {
                   <Text style={styles.pickerLabel}>START</Text>
                   <TouchableOpacity
                     style={styles.pickerInputWrapper}
-                    onPress={() => setShowPicker({ field: 'start', visible: true })}
+                    onPress={() => openTimePicker('start')}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="time-outline" size={18} color="#006664" style={styles.pickerIcon} />
@@ -418,7 +515,7 @@ const ActivityScreen = ({ route }) => {
                   <Text style={styles.pickerLabel}>END</Text>
                   <TouchableOpacity
                     style={styles.pickerInputWrapper}
-                    onPress={() => setShowPicker({ field: 'end', visible: true })}
+                    onPress={() => openTimePicker('end')}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="time-outline" size={18} color="#006664" style={styles.pickerIcon} />
@@ -437,24 +534,74 @@ const ActivityScreen = ({ route }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Date/Time Pickers */}
-        {showDatePicker && (
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            onChange={onDateChange}
-          />
+        {/* Date/Time Pickers - iOS: Modal, Android: inline */}
+        {Platform.OS === 'ios' ? (
+          <Modal visible={showDatePicker} transparent animationType="slide">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={[styles.modalDoneText, { color: '#999' }]}>ยกเลิก</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={confirmIOSDate}>
+                    <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={tempDate}
+                  mode="date"
+                  display="spinner"
+                  onChange={onDateChange}
+                  textColor="#333"
+                  style={{ height: 200, width: '100%' }}
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          showDatePicker && (
+            <DateTimePicker
+              value={date}
+              mode="date"
+              display="default"
+              onChange={onDateChange}
+            />
+          )
         )}
-        {showPicker.visible && (
-          <DateTimePicker
-            testID="timePicker"
-            value={new Date()}
-            mode="time"
-            is24Hour={true}
-            display="spinner"
-            onChange={onTimeChange}
-          />
+        {Platform.OS === 'ios' ? (
+          <Modal visible={showPicker.visible} transparent animationType="slide">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity onPress={() => setShowPicker({ field: null, visible: false })}>
+                    <Text style={[styles.modalDoneText, { color: '#999' }]}>ยกเลิก</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={confirmIOSTime}>
+                    <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={tempTime}
+                  mode="time"
+                  is24Hour={true}
+                  display="spinner"
+                  onChange={onTimeChange}
+                  textColor="#333"
+                  style={{ height: 200, width: '100%' }}
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          showPicker.visible && (
+            <DateTimePicker
+              value={tempTime}
+              mode="time"
+              is24Hour={true}
+              display="spinner"
+              onChange={onTimeChange}
+            />
+          )
         )}
 
         {/* ===== List Section ===== */}
@@ -846,6 +993,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#D97706',
     fontWeight: '700',
+  },
+
+  /* Modal Picker */
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 110 : 90,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    width: '100%',
+  },
+  modalDoneText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#006664',
   },
 });
 

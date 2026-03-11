@@ -1,5 +1,5 @@
 import React, { useState, useContext } from "react";
-import { Text, View, StyleSheet, Image, TouchableOpacity, Alert, TextInput, ScrollView, ActivityIndicator } from 'react-native';
+import { Text, View, StyleSheet, Image, TouchableOpacity, Alert, TextInput, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
 import { UserContext } from "../context/userContext";
 import { Picker } from "@react-native-picker/picker";
 import * as ImagePicker from 'expo-image-picker';
@@ -22,6 +22,8 @@ const ProfileScreen = ({ route, navigation }) => {
     const user = currentUser || route.params?.user || {};
     const [editUser, setEditUser] = useState(user);
     const [uploading, setUploading] = useState(false);
+    const [showDeptPicker, setShowDeptPicker] = useState(false);
+    const [showYearPicker, setShowYearPicker] = useState(false);
 
     // Sync editUser whenever currentUser in context changes (e.g. after Cloudinary upload + save)
     React.useEffect(() => {
@@ -222,16 +224,55 @@ const ProfileScreen = ({ route, navigation }) => {
                         <Ionicons name="school-outline" size={18} color="#006664" />
                         <Text style={styles.cardLabel}>คณะ</Text>
                     </View>
-                    <View style={styles.pickerBox}>
-                        <Picker selectedValue={editUser.Dept} style={styles.picker} onValueChange={(text) => handleEditUser('Dept', text)} mode="dropdown">
-                            <Picker.Item label="ศิลปศาสตร์และวิทยาศาสตร์" value="ศิลปศาสตร์และวิทยาศาสตร์" />
-                            <Picker.Item label="เกษตร" value="เกษตร" />
-                            <Picker.Item label="วิทยาศาสตร์การกีฬาและสุขภาพ" value="วิทยาศาสตร์การกีฬาและสุขภาพ" />
-                            <Picker.Item label="ศึกษาศาสตร์และพัฒนศาสตร์" value="ศึกษาศาสตร์และพัฒนศาสตร์" />
-                            <Picker.Item label="อุตสาหกรรมบริการ" value="อุตสาหกรรมบริการ" />
-                            <Picker.Item label="สัตว์แพทย์" value="สัตว์แพทย์" />
-                        </Picker>
-                    </View>
+                    {Platform.OS === 'ios' ? (
+                        <>
+                            <TouchableOpacity style={styles.pickerButton} onPress={() => setShowDeptPicker(true)}>
+                                <Text style={styles.pickerButtonText}>{editUser.Dept || 'เลือกคณะ'}</Text>
+                                <Ionicons name="chevron-down" size={18} color="#888" />
+                            </TouchableOpacity>
+                            <Modal visible={showDeptPicker} transparent animationType="slide">
+                                <View style={styles.modalOverlay}>
+                                    <View style={styles.modalContent}>
+                                        <View style={styles.modalHeader}>
+                                            <TouchableOpacity onPress={() => setShowDeptPicker(false)}>
+                                                <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                        <Picker
+                                            selectedValue={editUser.Dept}
+                                            onValueChange={(text) => handleEditUser('Dept', text)}
+                                            style={{ width: '100%' }}
+                                            itemStyle={{ color: '#000', fontSize: 17 }}
+                                        >
+                                            <Picker.Item label="ศิลปศาสตร์และวิทยาศาสตร์" value="ศิลปศาสตร์และวิทยาศาสตร์" />
+                                            <Picker.Item label="เกษตร" value="เกษตร" />
+                                            <Picker.Item label="วิทยาศาสตร์การกีฬาและสุขภาพ" value="วิทยาศาสตร์การกีฬาและสุขภาพ" />
+                                            <Picker.Item label="ศึกษาศาสตร์และพัฒนศาสตร์" value="ศึกษาศาสตร์และพัฒนศาสตร์" />
+                                            <Picker.Item label="อุตสาหกรรมบริการ" value="อุตสาหกรรมบริการ" />
+                                            <Picker.Item label="สัตว์แพทย์" value="สัตว์แพทย์" />
+                                        </Picker>
+                                    </View>
+                                </View>
+                            </Modal>
+                        </>
+                    ) : (
+                        <View style={styles.pickerBox}>
+                            <Picker
+                                selectedValue={editUser.Dept}
+                                style={styles.picker}
+                                onValueChange={(text) => handleEditUser('Dept', text)}
+                                mode="dropdown"
+                                dropdownIconColor="#006664"
+                            >
+                                <Picker.Item label="ศิลปศาสตร์และวิทยาศาสตร์" value="ศิลปศาสตร์และวิทยาศาสตร์" />
+                                <Picker.Item label="เกษตร" value="เกษตร" />
+                                <Picker.Item label="วิทยาศาสตร์การกีฬาและสุขภาพ" value="วิทยาศาสตร์การกีฬาและสุขภาพ" />
+                                <Picker.Item label="ศึกษาศาสตร์และพัฒนศาสตร์" value="ศึกษาศาสตร์และพัฒนศาสตร์" />
+                                <Picker.Item label="อุตสาหกรรมบริการ" value="อุตสาหกรรมบริการ" />
+                                <Picker.Item label="สัตว์แพทย์" value="สัตว์แพทย์" />
+                            </Picker>
+                        </View>
+                    )}
                 </View>
 
                 {/* ชั้นปี */}
@@ -240,19 +281,60 @@ const ProfileScreen = ({ route, navigation }) => {
                         <Ionicons name="calendar-outline" size={18} color="#006664" />
                         <Text style={styles.cardLabel}>ชั้นปีที่</Text>
                     </View>
-                    <View style={styles.pickerBox}>
-                        <Picker selectedValue={editUser.year} style={styles.picker} onValueChange={(text) => handleEditUser('year', text)} mode="dropdown">
-                            <Picker.Item label="ชั้นปี" />
-                            <Picker.Item label="1" value="1" />
-                            <Picker.Item label="2" value="2" />
-                            <Picker.Item label="3" value="3" />
-                            <Picker.Item label="4" value="4" />
-                            <Picker.Item label="5" value="5" />
-                            <Picker.Item label="6" value="6" />
-                            <Picker.Item label="7" value="7" />
-                            <Picker.Item label="8" value="8" />
-                        </Picker>
-                    </View>
+                    {Platform.OS === 'ios' ? (
+                        <>
+                            <TouchableOpacity style={styles.pickerButton} onPress={() => setShowYearPicker(true)}>
+                                <Text style={styles.pickerButtonText}>{editUser.year ? `ชั้นปีที่ ${editUser.year}` : 'เลือกชั้นปี'}</Text>
+                                <Ionicons name="chevron-down" size={18} color="#888" />
+                            </TouchableOpacity>
+                            <Modal visible={showYearPicker} transparent animationType="slide">
+                                <View style={styles.modalOverlay}>
+                                    <View style={styles.modalContent}>
+                                        <View style={styles.modalHeader}>
+                                            <TouchableOpacity onPress={() => setShowYearPicker(false)}>
+                                                <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                        <Picker
+                                            selectedValue={editUser.year}
+                                            onValueChange={(text) => handleEditUser('year', text)}
+                                            style={{ width: '100%' }}
+                                            itemStyle={{ color: '#000', fontSize: 17 }}
+                                        >
+                                            <Picker.Item label="1" value="1" />
+                                            <Picker.Item label="2" value="2" />
+                                            <Picker.Item label="3" value="3" />
+                                            <Picker.Item label="4" value="4" />
+                                            <Picker.Item label="5" value="5" />
+                                            <Picker.Item label="6" value="6" />
+                                            <Picker.Item label="7" value="7" />
+                                            <Picker.Item label="8" value="8" />
+                                        </Picker>
+                                    </View>
+                                </View>
+                            </Modal>
+                        </>
+                    ) : (
+                        <View style={styles.pickerBox}>
+                            <Picker
+                                selectedValue={editUser.year}
+                                style={styles.picker}
+                                onValueChange={(text) => handleEditUser('year', text)}
+                                mode="dropdown"
+                                dropdownIconColor="#006664"
+                            >
+                                <Picker.Item label="ชั้นปี" />
+                                <Picker.Item label="1" value="1" />
+                                <Picker.Item label="2" value="2" />
+                                <Picker.Item label="3" value="3" />
+                                <Picker.Item label="4" value="4" />
+                                <Picker.Item label="5" value="5" />
+                                <Picker.Item label="6" value="6" />
+                                <Picker.Item label="7" value="7" />
+                                <Picker.Item label="8" value="8" />
+                            </Picker>
+                        </View>
+                    )}
                 </View>
             </View>
 
@@ -443,6 +525,45 @@ const styles = StyleSheet.create({
     picker: {
         width: '100%',
         color: '#333',
+    },
+    pickerButton: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#f5f7f6',
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#e0e4e3',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    pickerButtonText: {
+        fontSize: 15,
+        color: '#333',
+    },
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: 30,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    modalDoneText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#006664',
     },
 
     /* ---- Action Buttons ---- */

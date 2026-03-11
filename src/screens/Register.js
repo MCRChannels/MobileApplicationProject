@@ -10,6 +10,7 @@ import {
     KeyboardAvoidingView,
     ScrollView,
     Platform,
+    Modal,
     ActivityIndicator
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
@@ -37,6 +38,8 @@ const Register = ({ navigation }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [showDeptPicker, setShowDeptPicker] = useState(false);
+    const [showYearPicker, setShowYearPicker] = useState(false);
 
     const handleRegister = async () => {
         const { fullname, email, username, password, confirmPassword } = form;
@@ -114,8 +117,7 @@ const Register = ({ navigation }) => {
         <SafeAreaView style={styles.safeArea}>
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
                 <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
@@ -208,43 +210,115 @@ const Register = ({ navigation }) => {
 
                         {/* Department Picker */}
                         <Text style={styles.label}>Faculty / Department</Text>
-                        <View style={styles.pickerWrapper}>
-                            <Ionicons name="business-outline" size={20} color="#006664" style={styles.pickerIcon} />
-                            <Picker
-                                selectedValue={form.Dept}
-                                onValueChange={(text) => handleInput('Dept', text)}
-                                mode="dropdown"
-                                style={styles.picker}
-                            >
-                                <Picker.Item label="ศิลปศาสตร์และวิทยาศาสตร์" value="ศิลปศาสตร์และวิทยาศาสตร์" />
-                                <Picker.Item label="เกษตร" value="เกษตร" />
-                                <Picker.Item label="วิทยาศาสตร์การกีฬาและสุขภาพ" value="วิทยาศาสตร์การกีฬาและสุขภาพ" />
-                                <Picker.Item label="ศึกษาศาสตร์และพัฒนศาสตร์" value="ศึกษาศาสตร์และพัฒนศาสตร์" />
-                                <Picker.Item label="อุตสาหกรรมบริการ" value="อุตสาหกรรมบริการ" />
-                                <Picker.Item label="สัตวแพทย์" value="สัตวแพทย์" />
-                            </Picker>
-                        </View>
+                        {Platform.OS === 'ios' ? (
+                            <>
+                                <TouchableOpacity style={styles.pickerButton} onPress={() => setShowDeptPicker(true)}>
+                                    <Ionicons name="business-outline" size={20} color="#006664" style={{ marginRight: 10 }} />
+                                    <Text style={styles.pickerButtonText}>{form.Dept}</Text>
+                                    <Ionicons name="chevron-down" size={18} color="#888" />
+                                </TouchableOpacity>
+                                <Modal visible={showDeptPicker} transparent animationType="slide">
+                                    <View style={styles.modalOverlay}>
+                                        <View style={styles.modalContent}>
+                                            <View style={styles.modalHeader}>
+                                                <TouchableOpacity onPress={() => setShowDeptPicker(false)}>
+                                                    <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                            <Picker
+                                                selectedValue={form.Dept}
+                                                onValueChange={(text) => handleInput('Dept', text)}
+                                                style={{ width: '100%' }}
+                                                itemStyle={{ color: '#000', fontSize: 17 }}
+                                            >
+                                                <Picker.Item label="ศิลปศาสตร์และวิทยาศาสตร์" value="ศิลปศาสตร์และวิทยาศาสตร์" />
+                                                <Picker.Item label="เกษตร" value="เกษตร" />
+                                                <Picker.Item label="วิทยาศาสตร์การกีฬาและสุขภาพ" value="วิทยาศาสตร์การกีฬาและสุขภาพ" />
+                                                <Picker.Item label="ศึกษาศาสตร์และพัฒนศาสตร์" value="ศึกษาศาสตร์และพัฒนศาสตร์" />
+                                                <Picker.Item label="อุตสาหกรรมบริการ" value="อุตสาหกรรมบริการ" />
+                                                <Picker.Item label="สัตวแพทย์" value="สัตวแพทย์" />
+                                            </Picker>
+                                        </View>
+                                    </View>
+                                </Modal>
+                            </>
+                        ) : (
+                            <View style={styles.pickerWrapper}>
+                                <Ionicons name="business-outline" size={20} color="#006664" style={styles.pickerIcon} />
+                                <Picker
+                                    selectedValue={form.Dept}
+                                    onValueChange={(text) => handleInput('Dept', text)}
+                                    mode="dropdown"
+                                    style={styles.picker}
+                                    dropdownIconColor="#006664"
+                                >
+                                    <Picker.Item label="ศิลปศาสตร์และวิทยาศาสตร์" value="ศิลปศาสตร์และวิทยาศาสตร์" />
+                                    <Picker.Item label="เกษตร" value="เกษตร" />
+                                    <Picker.Item label="วิทยาศาสตร์การกีฬาและสุขภาพ" value="วิทยาศาสตร์การกีฬาและสุขภาพ" />
+                                    <Picker.Item label="ศึกษาศาสตร์และพัฒนศาสตร์" value="ศึกษาศาสตร์และพัฒนศาสตร์" />
+                                    <Picker.Item label="อุตสาหกรรมบริการ" value="อุตสาหกรรมบริการ" />
+                                    <Picker.Item label="สัตวแพทย์" value="สัตวแพทย์" />
+                                </Picker>
+                            </View>
+                        )}
 
                         {/* Year Picker */}
                         <Text style={styles.label}>Year</Text>
-                        <View style={styles.pickerWrapper}>
-                            <Ionicons name="school-outline" size={20} color="#006664" style={styles.pickerIcon} />
-                            <Picker
-                                selectedValue={form.year}
-                                onValueChange={(text) => handleInput('year', text)}
-                                mode="dropdown"
-                                style={styles.picker}
-                            >
-                                <Picker.Item label="1" value="1" />
-                                <Picker.Item label="2" value="2" />
-                                <Picker.Item label="3" value="3" />
-                                <Picker.Item label="4" value="4" />
-                                <Picker.Item label="5" value="5" />
-                                <Picker.Item label="6" value="6" />
-                                <Picker.Item label="7" value="7" />
-                                <Picker.Item label="8" value="8" />
-                            </Picker>
-                        </View>
+                        {Platform.OS === 'ios' ? (
+                            <>
+                                <TouchableOpacity style={styles.pickerButton} onPress={() => setShowYearPicker(true)}>
+                                    <Ionicons name="school-outline" size={20} color="#006664" style={{ marginRight: 10 }} />
+                                    <Text style={styles.pickerButtonText}>{`ชั้นปีที่ ${form.year}`}</Text>
+                                    <Ionicons name="chevron-down" size={18} color="#888" />
+                                </TouchableOpacity>
+                                <Modal visible={showYearPicker} transparent animationType="slide">
+                                    <View style={styles.modalOverlay}>
+                                        <View style={styles.modalContent}>
+                                            <View style={styles.modalHeader}>
+                                                <TouchableOpacity onPress={() => setShowYearPicker(false)}>
+                                                    <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                            <Picker
+                                                selectedValue={form.year}
+                                                onValueChange={(text) => handleInput('year', text)}
+                                                style={{ width: '100%' }}
+                                                itemStyle={{ color: '#000', fontSize: 17 }}
+                                            >
+                                                <Picker.Item label="1" value="1" />
+                                                <Picker.Item label="2" value="2" />
+                                                <Picker.Item label="3" value="3" />
+                                                <Picker.Item label="4" value="4" />
+                                                <Picker.Item label="5" value="5" />
+                                                <Picker.Item label="6" value="6" />
+                                                <Picker.Item label="7" value="7" />
+                                                <Picker.Item label="8" value="8" />
+                                            </Picker>
+                                        </View>
+                                    </View>
+                                </Modal>
+                            </>
+                        ) : (
+                            <View style={styles.pickerWrapper}>
+                                <Ionicons name="school-outline" size={20} color="#006664" style={styles.pickerIcon} />
+                                <Picker
+                                    selectedValue={form.year}
+                                    onValueChange={(text) => handleInput('year', text)}
+                                    mode="dropdown"
+                                    style={styles.picker}
+                                    dropdownIconColor="#006664"
+                                >
+                                    <Picker.Item label="1" value="1" />
+                                    <Picker.Item label="2" value="2" />
+                                    <Picker.Item label="3" value="3" />
+                                    <Picker.Item label="4" value="4" />
+                                    <Picker.Item label="5" value="5" />
+                                    <Picker.Item label="6" value="6" />
+                                    <Picker.Item label="7" value="7" />
+                                    <Picker.Item label="8" value="8" />
+                                </Picker>
+                            </View>
+                        )}
 
                         {/* Register Button */}
                         <TouchableOpacity
@@ -369,7 +443,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.03,
         shadowRadius: 4,
         elevation: 2,
-        overflow: 'hidden',
     },
     pickerIcon: {
         marginRight: 6,
@@ -377,6 +450,51 @@ const styles = StyleSheet.create({
     picker: {
         flex: 1,
         color: '#2D3748',
+    },
+    pickerButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderRadius: 14,
+        height: 55,
+        paddingHorizontal: 16,
+        marginBottom: 14,
+        borderWidth: 1,
+        borderColor: '#e8ebe8',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    pickerButtonText: {
+        flex: 1,
+        fontSize: 15,
+        color: '#2D3748',
+    },
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    modalContent: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: 30,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    modalDoneText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#006664',
     },
 
     /* Register Button */

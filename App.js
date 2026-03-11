@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View, Image } from 'react-native';
+import { StyleSheet, Text, View, Image, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -12,16 +12,32 @@ import ProfileScreen from "./src/screens/ProfileScreen";
 import TimeTableScreen from "./src/screens/TimeTableScreen";
 import Register from "./src/screens/Register";
 import LoginScreen from "./src/screens/LoginScreen";
-import { UserProvider } from "./src/context/userContext";
+import { UserProvider, UserContext } from "./src/context/userContext";
 import CreateScreen from "./src/screens/CreateScreen";
-import { TaskProvider } from "./src/context/TaskContext";
-import { EventProvider } from "./src/context/eventContext";
+import { TaskProvider, TaskContext } from "./src/context/TaskContext";
+import { EventProvider, EventContext } from "./src/context/eventContext";
 import ExamScreen from "./src/screens/ExamScreen";
 import CreateExamScreen from "./src/screens/CreateExamScreen"
-import { ExamProvider } from "./src/context/examContext";
+import { ExamProvider, ExamContext } from "./src/context/examContext";
 
 const Tab = createBottomTabNavigator()
 const Stack = createNativeStackNavigator()
+
+// A helper component to pass context dispatchers down to UserProvider for Real-Time global sync
+const GlobalSyncLogic = () => {
+  const { setGlobalDispatchers } = React.useContext(UserContext);
+  const { dispatch: eventDispatch } = React.useContext(EventContext);
+  const { dispatch: examDispatch } = React.useContext(ExamContext);
+  const { dispatch: taskDispatch } = React.useContext(TaskContext);
+
+  React.useEffect(() => {
+    if (setGlobalDispatchers) {
+      setGlobalDispatchers({ eventDispatch, examDispatch, taskDispatch });
+    }
+  }, [setGlobalDispatchers, eventDispatch, examDispatch, taskDispatch]);
+
+  return null;
+};
 
 const TimeTableStack = () => {
   return (
@@ -59,10 +75,22 @@ const AllTabsScreen = () => {
         headerStyle: { height: 100, backgroundColor: '#006664', borderBottomLeftRadius: 15, borderBottomRightRadius: 15 },
         tabBarActiveTintColor: '#c3eb32ff',
         tabBarInactiveTintColor: '#e4e6e2ff',
-        tabBarStyle: { borderTopLeftRadius: 20, borderTopRightRadius: 20, height: 60, backgroundColor: '#006664', position: 'absolute', borderTopWidth: 0 },
+        tabBarHideOnKeyboard: true,
+        tabBarStyle: {
+          backgroundColor: '#006664',
+          height: Platform.OS === 'ios' ? 85 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 30 : 10,
+          paddingTop: 10,
+          borderTopWidth: 0,
+          elevation: 20,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.1,
+          shadowRadius: 10,
+        },
         headerTitle: () => (
           <Image
-            source={{ uri: 'https://media.discordapp.net/attachments/1097251790602375319/1472152473077682301/Gemini_Generated_Image_agwzv4agwzv4agwz-removebg-preview_1.png?ex=69918854&is=699036d4&hm=b83d1ab66efb80e3760f01d62ba03a7943baf9b085fe418a8a0d679babc8f0e2&=&format=webp&quality=lossless' }}
+            source={{ uri: 'https://cdn.discordapp.com/attachments/1097251790602375319/1472152473077682301/Gemini_Generated_Image_agwzv4agwzv4agwz-removebg-preview_1.png?ex=69b27dd4&is=69b12c54&hm=8392ccccb528f46fcfdfd76315a429d760efc4edfbf42477ee44e28d1fedd259&' }}
             style={{ width: 100, height: 100, marginBottom: 10, resizeMode: 'contain' }}
           />
         ),
@@ -100,6 +128,7 @@ export default function App() {
         <TaskProvider>
           <EventProvider>
             <ExamProvider>
+              <GlobalSyncLogic />
               <NavigationContainer>
                 <Stack.Navigator initialRouteName="Login" screenOptions={{ headerTintColor: '#fff', headerStyle: { backgroundColor: '#006664', borderBottomRightRadius: 20, borderBottomLeftRadius: 20, position: 'absolute', height: 100 } }}>
                   <Stack.Screen

@@ -33,27 +33,7 @@ const LoginScreen = ({ navigation }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    const loadUserData = async (uid) => {
-        try {
-            // Load events
-            const eventsSnap = await getDocs(collection(db, "users", uid, "events"));
-            const events = eventsSnap.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
-            eventDispatch({ type: "SET_EVENTS", payload: events });
-
-            // Load exams
-            const examsSnap = await getDocs(collection(db, "users", uid, "exams"));
-            const exams = examsSnap.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
-            examDispatch({ type: "SET_EXAMS", payload: exams });
-
-            // Load tasks
-            const tasksSnap = await getDocs(collection(db, "users", uid, "tasks"));
-            const tasks = tasksSnap.docs.map(d => ({ ...d.data(), id: d.id, firestoreId: d.id }));
-            taskDispatch({ type: "SET_TASKS", payload: tasks });
-        } catch (error) {
-            console.log("Error loading user data:", error);
-        }
-    };
-
+    // (Removed getDocs function as App.js now handles real-time subscriptions)
     const handleLogin = async () => {
         if (!email || !password) {
             Alert.alert('แจ้งเตือน', 'กรุณากรอก Email และ Password ให้ครบครับ');
@@ -85,9 +65,7 @@ const LoginScreen = ({ navigation }) => {
             // Set current user in context
             userDispatch({ type: 'SET_CURRENT_USER', payload: userData });
 
-            // Load all user data from Firestore
-            await loadUserData(uid);
-
+            // Global listeners in UserContext will automatically fetch classes, exams, and tasks.
             navigation.reset({
                 index: 0,
                 routes: [{ name: 'HomeApp', params: { screen: 'ProfileScreen', params: { user: userData } } }],
@@ -114,15 +92,14 @@ const LoginScreen = ({ navigation }) => {
         <SafeAreaView style={styles.safeArea}>
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
                 <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
                     {/* Header Image */}
                     <View style={styles.headerContainer}>
                         <Image
-                            source={{ uri: 'https://media.discordapp.net/attachments/1097251790602375319/1472155637910732842/Test2-removebg-preview_1.png?ex=69918b47&is=699039c7&hm=027dc8a9620906094d6cb314f6e763e1c7ff7ed27e7c7da09471e0aa10c7b27e&=&format=webp&quality=lossless' }}
+                            source={{ uri: 'https://cdn.discordapp.com/attachments/1097251790602375319/1472155637910732842/Test2-removebg-preview_1.png?ex=69b280c7&is=69b12f47&hm=ed33020238c33e5566bb74a31f420252305f9d0af49163ce9f27f8c4bded9753&' }}
                             style={styles.logoImage}
                             resizeMode="contain"
                         />
@@ -213,7 +190,7 @@ const styles = StyleSheet.create({
     scrollContainer: {
         flexGrow: 1,
         justifyContent: 'center',
-        paddingBottom: 40,
+        paddingBottom: 20,
     },
 
     /* Header Section */

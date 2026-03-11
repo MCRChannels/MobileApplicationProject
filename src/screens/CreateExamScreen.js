@@ -8,9 +8,12 @@ import {
   StatusBar,
   Alert,
   Platform,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { ExamContext } from "../context/examContext";
 import { UserContext } from "../context/userContext";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -30,30 +33,80 @@ const CreateExamScreen = ({ navigation }) => {
     roomNumber: "",
   });
 
-  const [showPicker, setShowPicker] = useState({ field: null, visible: false });
+  // Picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState({ field: null, visible: false });
+  const [tempDate, setTempDate] = useState(new Date());
+  const [tempTime, setTempTime] = useState(new Date());
 
-  const onDateTimeChange = (event, selectedValue) => {
-    setShowPicker({ ...showPicker, visible: false });
+  // --- Date Picker handlers ---
+  const openDatePicker = () => {
+    setTempDate(form.rawDate);
+    setShowDatePicker(true);
+  };
 
-    if (selectedValue) {
-      if (showPicker.field === 'date') {
+  const onDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      if (selectedDate) {
         setForm({
           ...form,
-          rawDate: selectedValue,
-          date: selectedValue.toLocaleDateString('th-TH')
+          rawDate: selectedDate,
+          date: selectedDate.toLocaleDateString('th-TH')
         });
-      } else {
-        const hours = selectedValue.getHours().toString().padStart(2, '0');
-        const minutes = selectedValue.getMinutes().toString().padStart(2, '0');
-        const timeString = `${hours}:${minutes}`;
+      }
+    } else {
+      if (selectedDate) setTempDate(selectedDate);
+    }
+  };
 
-        if (showPicker.field === 'start') {
+  const confirmIOSDate = () => {
+    setForm({
+      ...form,
+      rawDate: tempDate,
+      date: tempDate.toLocaleDateString('th-TH')
+    });
+    setShowDatePicker(false);
+  };
+
+  // --- Time Picker handlers ---
+  const openTimePicker = (field) => {
+    const currentVal = field === 'start' ? form.startTime : form.endTime;
+    const [h, m] = currentVal.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    setTempTime(d);
+    setShowTimePicker({ field, visible: true });
+  };
+
+  const onTimeChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowTimePicker({ field: null, visible: false });
+      if (selectedDate) {
+        const hours = selectedDate.getHours().toString().padStart(2, '0');
+        const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+        const timeString = `${hours}:${minutes}`;
+        if (showTimePicker.field === 'start') {
           setForm({ ...form, startTime: timeString });
         } else {
           setForm({ ...form, endTime: timeString });
         }
       }
+    } else {
+      if (selectedDate) setTempTime(selectedDate);
     }
+  };
+
+  const confirmIOSTime = () => {
+    const hours = tempTime.getHours().toString().padStart(2, '0');
+    const minutes = tempTime.getMinutes().toString().padStart(2, '0');
+    const timeString = `${hours}:${minutes}`;
+    if (showTimePicker.field === 'start') {
+      setForm({ ...form, startTime: timeString });
+    } else {
+      setForm({ ...form, endTime: timeString });
+    }
+    setShowTimePicker({ field: null, visible: false });
   };
 
   const handleCreate = async () => {
@@ -67,7 +120,6 @@ const CreateExamScreen = ({ navigation }) => {
       return;
     }
 
-    // Save to Firestore FIRST, then dispatch to context
     const examData = {
       title: form.title,
       date: form.date,
@@ -88,7 +140,7 @@ const CreateExamScreen = ({ navigation }) => {
     } catch (error) {
       console.log("Save exam error full stack:", error);
       Alert.alert('ข้อผิดพลาดจาก Firestore', `สาเหตุ: ${error.message} (Code: ${error.code})`);
-      return; // Stop here if Firestore fails!
+      return;
     }
 
     dispatch({
@@ -111,91 +163,158 @@ const CreateExamScreen = ({ navigation }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={styles.formContainer}>
-        {/* Subject Name */}
-        <Text style={styles.label}>Subject Name</Text>
-        <View style={styles.inputWrapper}>
-          <Ionicons name="book-outline" size={18} color="#006664" style={styles.inputIcon} />
-          <TextInput
-            style={styles.fullInput}
-            placeholder="e.g. Data Structure"
-            placeholderTextColor="#A0AEC0"
-            value={form.title}
-            onChangeText={(text) => setForm({ ...form, title: text })}
-          />
-        </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+          <View style={styles.formContainer}>
+            {/* Subject Name */}
+            <Text style={styles.label}>Subject Name</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="book-outline" size={18} color="#006664" style={styles.inputIcon} />
+              <TextInput
+                style={styles.fullInput}
+                placeholder="e.g. Data Structure"
+                placeholderTextColor="#A0AEC0"
+                value={form.title}
+                onChangeText={(text) => setForm({ ...form, title: text })}
+              />
+            </View>
 
-        {/* Exam Date */}
-        <Text style={styles.label}>Exam Date</Text>
-        <TouchableOpacity
-          style={styles.inputWrapper}
-          onPress={() => setShowPicker({ field: 'date', visible: true })}
-        >
-          <Ionicons name="calendar-outline" size={18} color="#006664" style={styles.inputIcon} />
-          <Text style={styles.valueText}>{form.date}</Text>
-        </TouchableOpacity>
-
-        {/* Time Row */}
-        <View style={styles.row}>
-          <View style={{ width: "48%" }}>
-            <Text style={styles.label}>Start Time</Text>
+            {/* Exam Date */}
+            <Text style={styles.label}>Exam Date</Text>
             <TouchableOpacity
-              style={[styles.inputWrapper, styles.halfInputWrapper]}
-              onPress={() => setShowPicker({ field: 'start', visible: true })}
+              style={styles.inputWrapper}
+              onPress={openDatePicker}
             >
-              <Ionicons name="time-outline" size={18} color="#006664" style={styles.inputIcon} />
-              <Text style={styles.valueText}>{form.startTime}</Text>
+              <Ionicons name="calendar-outline" size={18} color="#006664" style={styles.inputIcon} />
+              <Text style={styles.valueText}>{form.date}</Text>
+              <Ionicons name="chevron-down" size={18} color="#888" />
             </TouchableOpacity>
-          </View>
 
-          <View style={{ width: "48%" }}>
-            <Text style={styles.label}>End Time</Text>
-            <TouchableOpacity
-              style={[styles.inputWrapper, styles.halfInputWrapper]}
-              onPress={() => setShowPicker({ field: 'end', visible: true })}
-            >
-              <Ionicons name="play-outline" size={18} color="#006664" style={styles.inputIcon} />
-              <Text style={styles.valueText}>{form.endTime}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            {/* Time Row */}
+            <View style={styles.row}>
+              <View style={{ width: "48%" }}>
+                <Text style={styles.label}>Start Time</Text>
+                <TouchableOpacity
+                  style={[styles.inputWrapper, styles.halfInputWrapper]}
+                  onPress={() => openTimePicker('start')}
+                >
+                  <Ionicons name="time-outline" size={18} color="#006664" style={styles.inputIcon} />
+                  <Text style={styles.valueText}>{form.startTime}</Text>
+                </TouchableOpacity>
+              </View>
 
-        {/* Room */}
-        <Text style={styles.label}>Room & Seat</Text>
-        <View style={styles.inputWrapper}>
-          <Ionicons name="location-outline" size={18} color="#006664" style={styles.inputIcon} />
-          <TextInput
-            style={styles.fullInput}
-            placeholder="Room 402, Seat A1"
-            placeholderTextColor="#A0AEC0"
-            value={form.roomNumber}
-            onChangeText={(text) => setForm({ ...form, roomNumber: text })}
+              <View style={{ width: "48%" }}>
+                <Text style={styles.label}>End Time</Text>
+                <TouchableOpacity
+                  style={[styles.inputWrapper, styles.halfInputWrapper]}
+                  onPress={() => openTimePicker('end')}
+                >
+                  <Ionicons name="play-outline" size={18} color="#006664" style={styles.inputIcon} />
+                  <Text style={styles.valueText}>{form.endTime}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Room */}
+            <Text style={styles.label}>Room & Seat</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="location-outline" size={18} color="#006664" style={styles.inputIcon} />
+              <TextInput
+                style={styles.fullInput}
+                placeholder="Room 402, Seat A1"
+                placeholderTextColor="#A0AEC0"
+                value={form.roomNumber}
+                onChangeText={(text) => setForm({ ...form, roomNumber: text })}
+              />
+            </View>
+
+            {/* Footer Button - Move inside ScrollView */}
+            <View style={styles.footer}>
+              <TouchableOpacity style={styles.createButton} onPress={handleCreate} activeOpacity={0.85}>
+                <Ionicons name="checkmark-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.buttonText}>Save Exam Schedule</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ===== Date Picker ===== */}
+      {Platform.OS === 'ios' ? (
+        <Modal visible={showDatePicker} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={[styles.modalDoneText, { color: '#999' }]}>ยกเลิก</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmIOSDate}>
+                  <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={tempDate}
+                mode="date"
+                display="spinner"
+                onChange={onDateChange}
+                textColor="#333"
+                style={{ height: 200, width: '100%' }}
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : (
+        showDatePicker && (
+          <DateTimePicker
+            value={form.rawDate}
+            mode="date"
+            display="default"
+            onChange={onDateChange}
           />
-        </View>
-      </View>
-
-      {/* DateTimePicker */}
-      {showPicker.visible && (
-        <DateTimePicker
-          value={showPicker.field === 'date' ? form.rawDate : new Date()}
-          mode={showPicker.field === 'date' ? 'date' : 'time'}
-          is24Hour={true}
-          display={
-            showPicker.field === 'date'
-              ? (Platform.OS === 'ios' ? 'inline' : 'default')
-              : 'spinner'
-          }
-          onChange={onDateTimeChange}
-        />
+        )
       )}
 
-      {/* Footer Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.createButton} onPress={handleCreate} activeOpacity={0.85}>
-          <Ionicons name="checkmark-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.buttonText}>Save Exam Schedule</Text>
-        </TouchableOpacity>
-      </View>
+      {/* ===== Time Picker ===== */}
+      {Platform.OS === 'ios' ? (
+        <Modal visible={showTimePicker.visible} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => setShowTimePicker({ field: null, visible: false })}>
+                  <Text style={[styles.modalDoneText, { color: '#999' }]}>ยกเลิก</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmIOSTime}>
+                  <Text style={styles.modalDoneText}>เสร็จสิ้น</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={tempTime}
+                mode="time"
+                is24Hour={true}
+                display="spinner"
+                onChange={onTimeChange}
+                textColor="#333"
+                style={{ height: 200, width: '100%' }}
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : (
+        showTimePicker.visible && (
+          <DateTimePicker
+            value={tempTime}
+            mode="time"
+            is24Hour={true}
+            display="spinner"
+            onChange={onTimeChange}
+          />
+        )
+      )}
+
+      {/* Footer removed from here */}
     </SafeAreaView>
   );
 };
@@ -284,10 +403,38 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  /* Modal */
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    width: '100%',
+  },
+  modalDoneText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#006664',
+  },
+
   /* Footer */
   footer: {
-    paddingHorizontal: 30,
-    paddingBottom: 30,
+    paddingHorizontal: 10,
+    paddingBottom: Platform.OS === 'ios' ? 100 : 80, // Clearance for floating tab bar
     paddingTop: 10,
     alignItems: "center",
   },
